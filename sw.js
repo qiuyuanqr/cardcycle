@@ -3,8 +3,8 @@
    策略：页面走「网络优先、失败回退缓存」，保证联网时总是最新版；
         图标等静态资源走「缓存优先」。 */
 
-const CACHE = 'cardcycle-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest',
+const CACHE = 'cardcycle-v2';
+const SHELL = ['./', './index.html', './core.js', './manifest.webmanifest',
                './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -25,7 +25,9 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
 
-  const isPage = req.mode === 'navigate' || req.destination === 'document';
+  // 页面和 core.js 必须配套更新，都走网络优先；只有图标等真正的静态资源缓存优先
+  const isPage = req.mode === 'navigate' || req.destination === 'document'
+              || new URL(req.url).pathname.endsWith('/core.js');
 
   if (isPage) {
     // 网络优先：拿到新版就更新缓存；断网时回退到缓存

@@ -204,7 +204,16 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 
 <div class="mask" id="mask"><div class="modal" id="modal"></div></div>
 
+<script src="core.js"></script>
 <script>
+/* =====================================================================
+   核心逻辑来自 core.js（网页/小程序/测试共用），这里只做适配：
+   把本页的全局状态 S 注入 calc/bufOf，UI 代码的调用形式保持不变。
+   ===================================================================== */
+const { pd, fd, md, addD, diffD, nextStmt, prevStmt, money, today } = CardCycleCore;
+const calc  = (c, ref) => CardCycleCore.calc(c, S.txns, S.settings, ref);
+const bufOf = c => CardCycleCore.bufOf(c, S.settings);
+
 /* =====================================================================
    数据
    ===================================================================== */
@@ -229,81 +238,11 @@ function save(){
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
-/* =====================================================================
-   日期
-   ===================================================================== */
-const DAY=864e5;
-function today(){const t=new Date();return new Date(t.getFullYear(),t.getMonth(),t.getDate());}
-function pd(s){const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);}
-function fd(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
-function md(d){return (d.getMonth()+1)+'月'+d.getDate()+'日';}
-function addD(d,n){return new Date(d.getFullYear(),d.getMonth(),d.getDate()+n);}
-function diffD(a,b){return Math.round((b-a)/DAY);}
-function clampDay(y,m,day){return new Date(y,m,Math.min(day,new Date(y,m+1,0).getDate()));}
-function nextStmt(day,from){
-  let c=clampDay(from.getFullYear(),from.getMonth(),day);
-  if(c<from) c=clampDay(from.getFullYear(),from.getMonth()+1,day);
-  return c;
-}
-function prevStmt(day,from){
-  let c=clampDay(from.getFullYear(),from.getMonth(),day);
-  if(c>=from) c=clampDay(from.getFullYear(),from.getMonth()-1,day);
-  return c;
-}
-function money(n){return n.toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});}
+/* ---------- UI 工具 ---------- */
 function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 
-// 这张卡的提前天数（没设就用全局默认）
-function bufOf(c){ return c.buffer==null ? (S.settings.buffer||3) : c.buffer; }
-
-/* =====================================================================
-   核心：一张卡此刻处于周期何处
-   ===================================================================== */
-function calc(card,ref){
-  ref=ref||today();
-  const anchor=nextStmt(card.statementDay,ref);
-  const prevA=prevStmt(card.statementDay,ref);
-  const winStart=addD(prevA,1);
-  const due=addD(anchor,-bufOf(card));
-  const aKey=fd(anchor);
-
-  let cur=0,curN=0,over=0,overN=0;
-  for(const t of S.txns){
-    if(t.cardId!==card.id||t.repaid) continue;
-    const k=fd(nextStmt(card.statementDay,pd(t.date)));
-    if(k===aKey){cur+=t.amount;curN++;}
-    else if(k<aKey){over+=t.amount;overN++;}
-  }
-  const toDue=diffD(ref,due), toAnchor=diffD(ref,anchor);
-  const total=diffD(winStart,anchor);
-  const gone=Math.max(0,Math.min(total,diffD(winStart,ref)));
-
-  let st,label,hint;
-  if(over>0){
-    st='bad';label='已出账单';
-    hint='有 '+overN+' 笔（¥'+money(over)+'）跨过账单日仍未还，这部分已经上了账单。';
-  }else if(cur===0){
-    st='idle';label='本期未刷';
-    // 危险时段 = 还款截止日起到账单日：此时刷卡会计入即将出的账单，且已无还款缓冲
-    hint=toDue<=0
-      ? '已过本期安全窗口，现在刷会计入 '+md(anchor)+' 的账单。等 '+md(addD(anchor,1))+' 起再刷。'
-      : '可刷卡窗口 '+md(winStart)+' — '+md(addD(due,-1))+'。';
-  }else if(toDue<0){
-    st='bad';label='已超期限';
-    hint='已超还款日 '+(-toDue)+' 天，距账单日只剩 '+toAnchor+' 天，务必今天还清。';
-  }else if(toDue<=1){
-    st='hot';label=toDue===0?'今天还清':'明天前还清';
-    hint='账单日 '+md(anchor)+'，还款到账要时间，别再等了。';
-  }else if(toDue<=4){
-    st='warn';label='准备还款';
-    hint='请在 '+md(due)+' 前还清，账单日 '+md(anchor)+'。';
-  }else{
-    st='ok';label='周期进行中';
-    hint='还款截止 '+md(due)+'，账单日 '+md(anchor)+'。';
-  }
-  return {anchor,prevA,winStart,due,cur,curN,over,overN,toDue,toAnchor,st,label,hint,
-          pct:total>0?Math.round(gone/total*100):0};
-}
+// 多人模式：默认关闭（单人使用，界面不出现「持卡人」概念）
+const isMulti = () => S.settings.multiUser === true;
 
 const personName=id=>{const p=S.people.find(p=>p.id===id);return p?p.name:'—';};
 const cardLabel=c=>c.bank+(c.last4&&c.last4!=='****'?' ·'+c.last4:'');
@@ -347,7 +286,7 @@ function renderDash(){
 }
 function cardHTML(c,k){
   const head='<div class="cc-top"><div><div class="cc-name">'+esc(cardLabel(c))
-    +'<span class="who">'+esc(personName(c.personId))+'</span></div>'
+    +(isMulti()?'<span class="who">'+esc(personName(c.personId))+'</span>':'')+'</div>'
     +'<div class="cc-meta">账单日 '+c.statementDay+' 号 · 提前 '+bufOf(c)+' 天还'
     +(c.limit?' · 额度 ¥'+money(c.limit):'')+'</div></div>'
     +'<div class="pill">'+k.label+'</div></div>';
@@ -385,7 +324,7 @@ function renderHist(){
   let h='<div class="card"><select onchange="histFilter=this.value;renderHist()">'
     +'<option value="">全部信用卡</option>'
     +S.cards.map(c=>'<option value="'+c.id+'"'+(histFilter===c.id?' selected':'')+'>'
-      +esc(personName(c.personId)+' · '+cardLabel(c))+'</option>').join('')+'</select></div>';
+      +esc((isMulti()?personName(c.personId)+' · ':'')+cardLabel(c))+'</option>').join('')+'</select></div>';
   const rows=S.txns.filter(t=>!histFilter||t.cardId===histFilter)
     .sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
   if(!rows.length){ el.innerHTML=h+'<div class="card"><div class="empty">还没有刷卡记录。</div></div>'; return; }
@@ -395,7 +334,7 @@ function renderHist(){
     +'<div class="kv"><span>其中未还</span><b style="color:var(--hot)">¥'+money(un)+'</b></div></div>';
   h+='<div class="card">'+rows.map(t=>{
     const c=cardById(t.cardId),tm=termById(t.terminalId);
-    const sub=[c?personName(c.personId)+' · '+cardLabel(c):'已删除的卡',
+    const sub=[c?(isMulti()?personName(c.personId)+' · ':'')+cardLabel(c):'已删除的卡',
                tm?tm.name:'未记机器',t.note].filter(Boolean).join(' · ');
     return '<div class="tx"><div class="tx-l"><div class="tx-t">'+t.date+' &nbsp;¥'+money(t.amount)+'</div>'
       +'<div class="tx-s">'+esc(sub)+'</div></div>'
@@ -474,7 +413,7 @@ function renderSet(){
         const d=addD(nextStmt(c.statementDay,today()),-bufOf(c));
         return '<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(cardLabel(c))+'</div>'
         +'<div class="tx-s">账单日 '+c.statementDay+' 号 → 提醒 '+d.getDate()+' 号（提前 '+bufOf(c)+' 天）'
-        +' · '+esc(personName(c.personId))+'</div></div>'
+        +(isMulti()?' · '+esc(personName(c.personId)):'')+'</div></div>'
         +'<button class="btn sm ghost" onclick="openCard(\''+c.id+'\')">改</button>'
         +'<button class="btn sm danger" onclick="delCard(\''+c.id+'\')">删</button></div>';
       }).join(''):'<div class="empty" style="padding:14px">还没有信用卡</div>')
@@ -489,12 +428,14 @@ function renderSet(){
     +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="机器名，如 A 便利店">'
     +'<button class="btn" onclick="addTerm()">加</button></div></div>';
 
-  h+='<div class="sec">持卡人</div><div class="card">'
-    +S.people.map(p=>'<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(p.name)+'</div>'
-      +'<div class="tx-s">'+S.cards.filter(c=>c.personId===p.id).length+' 张卡</div></div>'
-      +'<button class="btn sm danger" onclick="delPerson(\''+p.id+'\')">删</button></div>').join('')
-    +'<div class="row" style="margin-top:11px"><input id="npName" placeholder="姓名，如 我 / 老张">'
-    +'<button class="btn" onclick="addPerson()">加</button></div></div>';
+  if(isMulti()){
+    h+='<div class="sec">持卡人</div><div class="card">'
+      +S.people.map(p=>'<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(p.name)+'</div>'
+        +'<div class="tx-s">'+S.cards.filter(c=>c.personId===p.id).length+' 张卡</div></div>'
+        +'<button class="btn sm danger" onclick="delPerson(\''+p.id+'\')">删</button></div>').join('')
+      +'<div class="row" style="margin-top:11px"><input id="npName" placeholder="姓名，如 我 / 老张">'
+      +'<button class="btn" onclick="addPerson()">加</button></div></div>';
+  }
 
   h+='<div class="sec">提醒</div><div class="card">'
     +'<div style="font-size:13px;line-height:1.7;color:var(--dim)">'
@@ -514,7 +455,11 @@ function renderSet(){
     +' · 存储状态：<span id="persistState">检测中…</span></div></div>';
 
   h+='<div class="sec">参数</div><div class="card">'
-    +'<label style="margin-top:0">新卡默认提前天数</label>'
+    +'<div class="row" style="justify-content:space-between">'
+    +'<div><div style="font-size:14px;font-weight:550">多人管理</div>'
+    +'<div class="tip" style="margin-top:2px">为朋友代管卡片时开启，界面会出现「持卡人」。<br>默认关闭：只管自己的卡，界面更干净。</div></div>'
+    +'<button class="btn sm '+(isMulti()?'':'ghost')+'" onclick="toggleMulti()">'+(isMulti()?'已开启':'已关闭')+'</button></div>'
+    +'<label>新卡默认提前天数</label>'
     +'<input type="number" min="0" max="10" value="'+(S.settings.buffer||3)+'" onchange="setBuffer(this.value)">'
     +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
     +'<label>同机同卡最小间隔（天）</label>'
@@ -533,6 +478,24 @@ function renderSet(){
 
   el.innerHTML=h;
   showPersist();
+}
+// 单人模式的隐形持卡人：保证卡片始终有归属，但界面不出现这个概念
+function ensureMe(){
+  if(!S.people.length) S.people.push({id:uid(),name:'我'});
+  return S.people[0].id;
+}
+function toggleMulti(){
+  if(isMulti()){
+    if(S.people.length>1){
+      alert('目前有 '+S.people.length+' 个持卡人。请先把卡片都归到一个人名下并删除其余持卡人，再关闭多人管理。');
+      return;
+    }
+    S.settings.multiUser=false;
+  }else{
+    S.settings.multiUser=true;
+    ensureMe();
+  }
+  save();renderAll();
 }
 function addPerson(){const v=document.getElementById('npName').value.trim();if(!v)return;
   S.people.push({id:uid(),name:v});save();renderAll();}
@@ -568,12 +531,14 @@ document.getElementById('mask').addEventListener('click',e=>{if(e.target.id==='m
 
 /* ---- 信用卡 ---- */
 function openCard(id){
-  if(!S.people.length){alert('请先添加一个持卡人。');return;}
+  if(isMulti() && !S.people.length){alert('请先添加一个持卡人。');return;}
   const c=id?cardById(id):null;
   const b=c?bufOf(c):(S.settings.buffer||3);
   showModal('<h3>'+(c?'编辑信用卡':'添加信用卡')+'</h3>'
-    +'<label>持卡人</label><select id="fPerson">'
-    +S.people.map(p=>'<option value="'+p.id+'"'+(c&&c.personId===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select>'
+    +(isMulti()
+      ? '<label>持卡人</label><select id="fPerson">'
+        +S.people.map(p=>'<option value="'+p.id+'"'+(c&&c.personId===p.id?' selected':'')+'>'+esc(p.name)+'</option>').join('')+'</select>'
+      : '')
     +'<div class="two"><div><label>银行</label><input id="fBank" value="'+(c?esc(c.bank):'')+'" placeholder="广发银行"></div>'
     +'<div><label>卡号后四位（选填）</label><input id="fLast4" value="'+(c&&c.last4!=='****'?esc(c.last4):'')+'" maxlength="4" inputmode="numeric" placeholder="1234"></div></div>'
     +'<div class="two"><div><label>账单日（每月几号）</label>'
@@ -602,7 +567,8 @@ function saveCard(id){
   if(!bank){alert('请填银行名称');return;}
   if(!(stmt>=1&&stmt<=31)){alert('账单日填 1–31');return;}
   if(!(buf>=0&&buf<=15)){alert('提前天数填 0–15');return;}
-  const data={personId:document.getElementById('fPerson').value,bank,
+  const pEl=document.getElementById('fPerson');
+  const data={personId:pEl?pEl.value:ensureMe(),bank,
     last4:document.getElementById('fLast4').value.trim()||'****',
     statementDay:stmt,buffer:buf,limit:+document.getElementById('fLimit').value||0};
   if(id) Object.assign(cardById(id),data);
@@ -678,56 +644,14 @@ function repayAll(cid){
 }
 
 /* =====================================================================
-   日历导出
+   日历导出（生成逻辑在 core.js 的 buildICS，这里只负责下载与提示）
    ===================================================================== */
-const icsEsc=s=>String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
-const icsDate=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
-// RFC 5545 要求物理行 ≤75 字节；中文描述容易超，按 UTF-8 字节数折行（续行以空格开头）
-function icsFold(line){
-  const enc=new TextEncoder();
-  if(enc.encode(line).length<=73) return line;
-  const parts=[]; let cur='';
-  for(const ch of line){
-    if(enc.encode(cur+ch).length>73){parts.push(cur);cur=ch;}
-    else cur+=ch;
-  }
-  if(cur) parts.push(cur);
-  return parts.join('\r\n ');
-}
-
 function exportICS(){
   if(!S.cards.length){alert('还没有信用卡。');return;}
-  const n0=new Date(),p2=x=>String(x).padStart(2,'0');
-  const stamp=n0.getUTCFullYear()+p2(n0.getUTCMonth()+1)+p2(n0.getUTCDate())+'T'
-    +p2(n0.getUTCHours())+p2(n0.getUTCMinutes())+p2(n0.getUTCSeconds())+'Z';
-  const L=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//cardcycle//CN','CALSCALE:GREGORIAN',
-           'METHOD:PUBLISH','X-WR-CALNAME:卡周期提醒'];
-  const ev=(u,day,sum,desc,al)=>{
-    L.push('BEGIN:VEVENT','UID:'+u+'@cardcycle','DTSTAMP:'+stamp,
-      'DTSTART;VALUE=DATE:'+icsDate(day),'DTEND;VALUE=DATE:'+icsDate(addD(day,1)),
-      'SUMMARY:'+icsEsc(sum),'DESCRIPTION:'+icsEsc(desc),'TRANSP:TRANSPARENT');
-    (al||[]).forEach(t=>L.push('BEGIN:VALARM','ACTION:DISPLAY','DESCRIPTION:'+icsEsc(sum),'TRIGGER:'+t,'END:VALARM'));
-    L.push('END:VEVENT');
-  };
-  let n=0;
-  for(const c of S.cards){
-    const nm=cardLabel(c), who=personName(c.personId), b=bufOf(c);
-    let a=nextStmt(c.statementDay,today());
-    for(let i=0;i<12;i++){
-      ev(c.id+'-due-'+icsDate(a), addD(a,-b), '【还款】'+nm,
-        '账单日 '+md(a)+'。请在今天之前把本周期刷的金额全部还清，账单日结算时余额为 0 才不会出账单。'
-        +'\n还款到账可能需要 1 天，别卡最后一刻。\n持卡人：'+who,
-        ['-P2DT15H','-PT15H','PT9H']); n++;
-      const op=addD(a,1);
-      ev(c.id+'-open-'+icsDate(op), op, '【可刷卡】'+nm,
-        '账单日 '+md(a)+' 已过，新周期开始。本期还款截止 '
-        +md(addD(nextStmt(c.statementDay,op),-b))+'。', ['PT9H']); n++;
-      a=nextStmt(c.statementDay,addD(a,1));
-    }
-  }
-  L.push('END:VCALENDAR');
-  dl(new Blob([L.map(icsFold).join('\r\n')],{type:'text/calendar;charset=utf-8'}),'卡周期提醒.ics');
-  setTimeout(()=>alert('已生成 '+n+' 条提醒，覆盖未来 12 个月。\n\niPhone：选「存储到文件」，'
+  const r = CardCycleCore.buildICS(S.cards, S.people, S.settings,
+                                   {months:12, multiUser:isMulti()});
+  dl(new Blob([r.text],{type:'text/calendar;charset=utf-8'}),'卡周期提醒.ics');
+  setTimeout(()=>alert('已生成 '+r.count+' 条提醒，覆盖未来 12 个月。\n\niPhone：选「存储到文件」，'
     +'然后到文件 App 里点开它，选择加入日历。\n\n建议放进单独的日历分组，下次重新导出前先删掉旧的。'),400);
 }
 
@@ -789,6 +713,7 @@ function applyImport(txt){
   if(!confirm('将导入 '+d.cards.length+' 张卡、'+(d.txns||[]).length+' 条记录，覆盖当前数据。确定？')) return false;
   S=Object.assign(structuredClone(DEF),d);
   S.settings=Object.assign(structuredClone(DEF.settings),d.settings||{});
+  if(S.people.length>1) S.settings.multiUser=true;   // 多人备份自动进多人模式
   save(); closeModal(); go('dash');
   alert('导入成功。'); return true;
 }
@@ -847,12 +772,14 @@ function renderAll(){
   renderDash();renderHist();renderPos();renderSet();
 }
 
-// 首次打开：一个持卡人 + 四台占位机器（可改可删）
+// 首次打开：一个隐形持卡人 + 四台占位机器（可改可删）
 if(!localStorage.getItem(KEY)){
   S.people=[{id:uid(),name:'我'}];
   S.terminals=['A 机器','B 机器','C 机器','D 机器'].map(n=>({id:uid(),name:n,note:''}));
   save();
 }
+// 老数据迁移：已经有多个持卡人的，自动切到多人模式
+if(S.people.length>1 && S.settings.multiUser!==true){ S.settings.multiUser=true; save(); }
 renderAll();
 askPersist();
 
