@@ -856,6 +856,9 @@ if(!localStorage.getItem(KEY)){
 renderAll();
 askPersist();
 
+// PWA 从后台切回前台时重算——否则隔夜打开显示的还是昨天的倒计时
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) renderAll(); });
+
 if('serviceWorker' in navigator && location.protocol==='https:'){
   navigator.serviceWorker.register('sw.js').catch(()=>{});
 }
