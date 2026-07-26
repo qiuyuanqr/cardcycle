@@ -284,8 +284,9 @@ function calc(card,ref){
     hint='有 '+overN+' 笔（¥'+money(over)+'）跨过账单日仍未还，这部分已经上了账单。';
   }else if(cur===0){
     st='idle';label='本期未刷';
-    hint=toAnchor<=1
-      ? '临近账单日，现在刷会计入本期账单。等 '+md(addD(anchor,1))+' 起再刷。'
+    // 危险时段 = 还款截止日起到账单日：此时刷卡会计入即将出的账单，且已无还款缓冲
+    hint=toDue<=0
+      ? '已过本期安全窗口，现在刷会计入 '+md(anchor)+' 的账单。等 '+md(addD(anchor,1))+' 起再刷。'
       : '可刷卡窗口 '+md(winStart)+' — '+md(addD(due,-1))+'。';
   }else if(toDue<0){
     st='bad';label='已超期限';
@@ -353,8 +354,8 @@ function cardHTML(c,k){
 
   // 本期没刷过的卡收成一行，避免 7 张卡把概览页撑得太长
   if(k.st==='idle'){
-    const soon=k.toAnchor<=1;
-    const line = soon ? md(addD(k.anchor,1))+' 起进入新窗口'
+    const soon=k.toDue<=0;   // 已过安全窗口：现在刷会计入即将出的账单
+    const line = soon ? '窗口已过 · '+md(addD(k.anchor,1))+' 起再刷'
                       : '可刷至 '+md(addD(k.due,-1))+' · '+md(k.due)+' 前还清';
     return '<div class="card cc s-idle" style="padding-top:13px;padding-bottom:13px">'+head
       +'<div class="row" style="margin-top:10px">'
@@ -622,7 +623,9 @@ function openSwipe(cid){
 function drawSwipe(){
   const k=calc(cardById(swipeCard)),t0=today();
   let warn='';
-  if(k.toAnchor<=1) warn='<div class="hint" style="color:var(--bad)">注意：距账单日只剩 '+k.toAnchor+' 天，现在刷会计入本期账单。</div>';
+  if(k.toDue<=0) warn='<div class="hint" style="color:var(--bad)">注意：本期安全窗口已过（'
+    +(k.toAnchor===0?'今天就是账单日':'距账单日只剩 '+k.toAnchor+' 天')
+    +'），现在刷会计入 '+md(k.anchor)+' 的账单。建议等 '+md(addD(k.anchor,1))+' 起再刷。</div>';
   else if(k.toDue<=1) warn='<div class="hint" style="color:var(--hot)">注意：本期还款截止 '+md(k.due)+'，现在刷的钱也要在那之前还清。</div>';
   showModal('<h3>记一笔刷卡</h3><div class="hint">周期归属按账单日自动计算。</div>'
     +'<label>用哪张卡</label><div class="chips">'
@@ -647,8 +650,10 @@ function drawSwipe(){
 function saveSwipe(){
   const a=+document.getElementById('sAmt').value;
   if(!(a>0)){alert('请填写金额');return;}
+  const dt=document.getElementById('sDate').value||fd(today());
+  if(dt>fd(today()) && !confirm(dt+' 是未来的日期，确定这样记录吗？')) return;
   S.txns.push({id:uid(),cardId:swipeCard,terminalId:swipeTerm,
-    date:document.getElementById('sDate').value||fd(today()),amount:a,
+    date:dt,amount:a,
     note:document.getElementById('sNote').value.trim(),repaid:false,repaidDate:null});
   save();closeModal();go('dash');
 }
@@ -677,6 +682,18 @@ function repayAll(cid){
    ===================================================================== */
 const icsEsc=s=>String(s).replace(/\\/g,'\\\\').replace(/;/g,'\\;').replace(/,/g,'\\,').replace(/\n/g,'\\n');
 const icsDate=d=>d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0');
+// RFC 5545 要求物理行 ≤75 字节；中文描述容易超，按 UTF-8 字节数折行（续行以空格开头）
+function icsFold(line){
+  const enc=new TextEncoder();
+  if(enc.encode(line).length<=73) return line;
+  const parts=[]; let cur='';
+  for(const ch of line){
+    if(enc.encode(cur+ch).length>73){parts.push(cur);cur=ch;}
+    else cur+=ch;
+  }
+  if(cur) parts.push(cur);
+  return parts.join('\r\n ');
+}
 
 function exportICS(){
   if(!S.cards.length){alert('还没有信用卡。');return;}
@@ -709,7 +726,7 @@ function exportICS(){
     }
   }
   L.push('END:VCALENDAR');
-  dl(new Blob([L.join('\r\n')],{type:'text/calendar;charset=utf-8'}),'卡周期提醒.ics');
+  dl(new Blob([L.map(icsFold).join('\r\n')],{type:'text/calendar;charset=utf-8'}),'卡周期提醒.ics');
   setTimeout(()=>alert('已生成 '+n+' 条提醒，覆盖未来 12 个月。\n\niPhone：选「存储到文件」，'
     +'然后到文件 App 里点开它，选择加入日历。\n\n建议放进单独的日历分组，下次重新导出前先删掉旧的。'),400);
 }
