@@ -1,0 +1,17 @@
+.dot { width: 18rpx; height: 18rpx; border-radius: 50%; flex: none; }
+.d-ok { background: #1ea862; }
+.d-warn { background: #d99514; }
+.d-bad { background: #e0384a; }
+
+.gap-r { text-align: right; }
+.gap-n { font-size: 34rpx; font-weight: 600; }
+.gap-t { font-size: 22rpx; color: #8c94a4; }
+
+.mtx { display: inline-block; min-width: 100%; font-size: 24rpx; }
+.mrow { display: flex; border-top: 1rpx solid #e3e6ed; }
+.mhead { border-top: 0; color: #8c94a4; }
+.mlabel { flex: none; width: 220rpx; padding: 16rpx 12rpx 16rpx 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mcell { flex: none; width: 130rpx; padding: 16rpx 8rpx; text-align: center; }
+.m-ok { color: #1ea862; }
+.m-hot { color: #e8701f; }
+.m-dim { color: #8c94a4; }

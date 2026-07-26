@@ -1,0 +1,38 @@
+<view class="wrap">
+  <view wx:if="{{!list.length}}" class="card">
+    <view class="empty">还没有刷卡机。\n去「设置」添加。</view>
+  </view>
+
+  <view wx:if="{{list.length}}" class="card">
+    <view class="sec" style="margin:0 0 8rpx">按闲置时间排序</view>
+    <view wx:for="{{list}}" wx:key="id" class="tx">
+      <view class="dot d-{{item.cls}}"></view>
+      <view class="tx-l">
+        <view class="tx-t">{{item.name}}</view>
+        <view class="tx-s">{{item.sub}}</view>
+      </view>
+      <view class="gap-r">
+        <view class="gap-n">{{item.gapText}}</view>
+        <view class="gap-t">天未用</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{matrix}}" class="card">
+    <view class="sec" style="margin:0 0 12rpx">卡 × 机器 · 上次使用</view>
+    <scroll-view scroll-x="true">
+      <view class="mtx">
+        <view class="mrow mhead">
+          <view class="mlabel">卡</view>
+          <view wx:for="{{matrix.heads}}" wx:key="*this" class="mcell">{{item}}</view>
+        </view>
+        <view wx:for="{{matrix.rows}}" wx:key="label" class="mrow">
+          <view class="mlabel">{{item.label}}</view>
+          <view wx:for="{{item.cells}}" wx:for-item="cell" wx:key="index"
+                class="mcell m-{{cell.cls}}">{{cell.text}}</view>
+        </view>
+      </view>
+    </scroll-view>
+    <view class="tip">数字＝距上次「这张卡在这台机器」刷卡的天数。绿色表示已超过设定的 {{minGap}} 天。</view>
+  </view>
+</view>

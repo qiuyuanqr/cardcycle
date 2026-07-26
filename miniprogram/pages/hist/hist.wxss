@@ -1,0 +1,7 @@
+.kv {
+  display: flex; justify-content: space-between;
+  padding: 18rpx 0; border-bottom: 1rpx solid #e3e6ed; font-size: 27rpx;
+}
+.kv:last-child { border-bottom: 0; }
+.k { color: #5d6472; }
+.v { font-weight: 600; }

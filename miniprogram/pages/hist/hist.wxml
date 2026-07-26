@@ -1,0 +1,27 @@
+<view class="wrap">
+  <view class="card">
+    <picker range="{{filterNames}}" value="{{filterIdx}}" bindchange="onFilter">
+      <view class="ipt">{{filterNames[filterIdx]}}</view>
+    </picker>
+  </view>
+
+  <view wx:if="{{stat}}" class="card">
+    <view class="kv"><text class="k">记录笔数</text><text class="v">{{stat.n}} 笔</text></view>
+    <view class="kv"><text class="k">累计刷卡</text><text class="v">¥{{stat.tot}}</text></view>
+    <view class="kv"><text class="k">其中未还</text><text class="v c-hot">¥{{stat.un}}</text></view>
+  </view>
+
+  <view wx:if="{{!rows.length}}" class="card"><view class="empty">还没有刷卡记录。</view></view>
+
+  <view wx:if="{{rows.length}}" class="card">
+    <view wx:for="{{rows}}" wx:key="id" class="tx">
+      <view class="tx-l">
+        <view class="tx-t">{{item.date}}　¥{{item.amt}}</view>
+        <view class="tx-s">{{item.sub}}</view>
+      </view>
+      <text class="tag {{item.repaid ? 'paid' : ''}}">{{item.repaid ? '已还' : '未还'}}</text>
+      <view class="btn sm ghost" bindtap="toggle" data-id="{{item.id}}">{{item.repaid ? '撤销' : '标已还'}}</view>
+      <view class="btn sm danger" bindtap="del" data-id="{{item.id}}">删</view>
+    </view>
+  </view>
+</view>

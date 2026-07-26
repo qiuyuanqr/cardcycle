@@ -1,0 +1,70 @@
+<view class="wrap">
+
+  <view class="sec">信用卡</view>
+  <view class="card">
+    <view wx:if="{{!cards.length}}" class="empty" style="padding:24rpx">还没有信用卡</view>
+    <view wx:for="{{cards}}" wx:key="id" class="tx">
+      <view class="tx-l">
+        <view class="tx-t">{{item.label}}</view>
+        <view class="tx-s">{{item.sub}}</view>
+      </view>
+      <view class="btn sm ghost" bindtap="editCard" data-id="{{item.id}}">改</view>
+    </view>
+    <view class="btn ghost" style="margin-top:22rpx" bindtap="addCard">＋ 添加信用卡</view>
+  </view>
+
+  <view class="sec">刷卡机</view>
+  <view class="card">
+    <view wx:if="{{!terms.length}}" class="empty" style="padding:24rpx">还没有刷卡机</view>
+    <view wx:for="{{terms}}" wx:key="id" class="tx">
+      <view class="tx-l">
+        <view class="tx-t">{{item.name}}</view>
+        <view class="tx-s">{{item.sub}}</view>
+      </view>
+      <view class="btn sm danger" bindtap="delTerm" data-id="{{item.id}}">删</view>
+    </view>
+    <view class="row" style="margin-top:22rpx">
+      <input class="ipt grow" placeholder="机器名，如 A 便利店"
+             value="{{newTerm}}" bindinput="onNewTerm" />
+      <view class="btn sm" bindtap="addTerm">加</view>
+    </view>
+  </view>
+
+  <view class="sec">提醒</view>
+  <view class="card">
+    <view class="tip" style="margin-top:0">
+      生成未来 12 个月的日历文件并转发到微信聊天（发给自己或文件传输助手），
+      在 iPhone 上点开文件即可加入系统日历，由日历按时提醒。
+      每张卡每月两条：可刷卡（账单日次日）、该还款（提前 3 天起连提醒三次）。
+    </view>
+    <view class="btn" style="margin-top:22rpx" bindtap="exportICS">导出日历提醒（.ics）</view>
+  </view>
+
+  <view class="sec">数据备份</view>
+  <view class="card">
+    <view class="tip" style="margin-top:0">
+      数据只存在这台手机的微信里，删除小程序会清空数据，请定期备份。
+      备份与网页版格式一致，可互相导入。
+    </view>
+    <view class="row" style="margin-top:22rpx">
+      <view class="btn ghost grow" bindtap="exportJSON">复制备份</view>
+      <view class="btn ghost grow" bindtap="importJSON">从剪贴板导入</view>
+    </view>
+    <view class="tip">{{lastBackup ? '上次备份：' + lastBackup : '还没有备份过'}}</view>
+  </view>
+
+  <view class="sec">参数</view>
+  <view class="card">
+    <view class="lbl" style="margin-top:0">新卡默认提前天数</view>
+    <input class="ipt" type="number" value="{{buffer}}" bindblur="onBuffer" />
+    <view class="lbl">同机同卡最小间隔（天）</view>
+    <input class="ipt" type="number" value="{{minGap}}" bindblur="onGap" />
+    <view class="btn danger" style="margin-top:32rpx" bindtap="wipe">清空全部数据</view>
+  </view>
+
+  <view class="card notice">
+    <view class="tip" style="margin-top:0">
+      <text style="color:#5d6472;font-weight:600">两点提醒</text>\n1. 银行对信用卡资金用途有明确规定，信用卡应当用于真实消费。非真实交易的资金套取属违规，被认定可能面临降额、冻结乃至更严重后果。本工具只负责记账与提醒。\n2. 长期零账单，征信上看不到额度占用，但也意味着这些卡几乎没有用卡记录。部分银行的提额模型和某些贷款审批反而看重稳定的用卡与按时还款历史，值得权衡。
+    </view>
+  </view>
+</view>

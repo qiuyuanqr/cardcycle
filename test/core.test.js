@@ -7,6 +7,22 @@ const C = require('../core.js');
 
 const SETTINGS = { buffer: 3 };
 
+/* ---------- 跨端兼容实现 ---------- */
+test('utf8Len 与 TextEncoder 一致（小程序端无 TextEncoder，用手写实现）', () => {
+  const enc = new TextEncoder();
+  const samples = ['abc', '中文测试', '【还款】广发银行 ·1234', 'a中1文,;\\n', '😀emoji𝄞混排', ''];
+  for (const s of samples)
+    assert.strictEqual(C.utf8Len(s), enc.encode(s).length, JSON.stringify(s));
+});
+
+test('money 手写千分位', () => {
+  assert.strictEqual(C.money(0), '0.00');
+  assert.strictEqual(C.money(999), '999.00');
+  assert.strictEqual(C.money(1000), '1,000.00');
+  assert.strictEqual(C.money(1234567.891), '1,234,567.89');
+  assert.strictEqual(C.money(-38500), '-38,500.00');
+});
+
 /* ---------- 月份天数 ---------- */
 test('月份天数 2025–2030（含三种闰年规则）', () => {
   const LEN = { 1:31, 2:28, 3:31, 4:30, 5:31, 6:30, 7:31, 8:31, 9:30, 10:31, 11:30, 12:31 };

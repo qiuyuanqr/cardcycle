@@ -1,0 +1,48 @@
+.urgent { box-shadow: inset 0 0 0 3rpx #e8701f; }
+.u-lbl { font-size: 25rpx; color: #5d6472; }
+.u-amt { font-size: 52rpx; font-weight: 650; letter-spacing: -1rpx; margin-top: 6rpx; }
+.u-unit { font-size: 26rpx; font-weight: 500; color: #5d6472; margin-left: 6rpx; }
+.u-r { text-align: right; }
+
+/* 状态卡：左色条 */
+.cc { position: relative; overflow: hidden; padding-left: 38rpx; }
+.cc::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 8rpx;
+}
+.s-ok::before   { background: #1ea862; }
+.s-warn::before { background: #d99514; }
+.s-hot::before  { background: #e8701f; }
+.s-bad::before  { background: #e0384a; }
+.s-idle::before { background: #e3e6ed; }
+
+.cc-top { display: flex; align-items: flex-start; gap: 18rpx; }
+.cc-name { font-size: 31rpx; font-weight: 620; }
+.cc-meta { font-size: 24rpx; color: #8c94a4; margin-top: 6rpx; }
+
+.pill {
+  font-size: 22rpx; font-weight: 640; padding: 8rpx 18rpx;
+  border-radius: 40rpx; white-space: nowrap;
+}
+.p-ok   { background: rgba(30,168,98,.15);  color: #1ea862; }
+.p-warn { background: rgba(217,149,20,.15); color: #d99514; }
+.p-hot  { background: rgba(232,112,31,.15); color: #e8701f; }
+.p-bad  { background: rgba(224,56,74,.15);  color: #e0384a; }
+.p-idle { background: #eef0f5; color: #5d6472; }
+
+.cc-body { margin-top: 22rpx; display: flex; align-items: baseline; gap: 24rpx; flex-wrap: wrap; }
+.amt { font-size: 52rpx; font-weight: 660; letter-spacing: -1rpx; }
+.amt-unit { font-size: 26rpx; font-weight: 500; color: #5d6472; margin-left: 6rpx; }
+.cd { font-size: 26rpx; color: #5d6472; }
+.cd-n { font-size: 32rpx; font-weight: 600; }
+.n-ok { color: #1ea862; } .n-warn { color: #d99514; }
+.n-hot { color: #e8701f; } .n-bad { color: #e0384a; }
+
+.track { height: 10rpx; background: #eef0f5; border-radius: 6rpx; overflow: hidden; margin-top: 24rpx; }
+.fill { height: 100%; border-radius: 6rpx; }
+.f-ok { background: #1ea862; } .f-warn { background: #d99514; }
+.f-hot { background: #e8701f; } .f-bad { background: #e0384a; }
+
+.ticks { display: flex; justify-content: space-between; font-size: 22rpx; color: #8c94a4; margin-top: 10rpx; }
+.note { font-size: 25rpx; color: #8c94a4; margin-top: 16rpx; line-height: 1.6; }
+.acts { display: flex; gap: 14rpx; margin-top: 24rpx; flex-wrap: wrap; }
+.idle-line { font-size: 25rpx; }

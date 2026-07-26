@@ -1,0 +1,3 @@
+.hint { font-size: 25rpx; color: #8c94a4; }
+.lbl-sub { color: #8c94a4; font-weight: 400; }
+.warnbox { font-size: 25rpx; line-height: 1.6; margin-top: 22rpx; }

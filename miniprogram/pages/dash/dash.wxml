@@ -1,0 +1,54 @@
+<view class="wrap">
+
+  <view wx:if="{{!hasCards}}" class="card">
+    <view class="empty">还没有信用卡。\n去「设置」添加，或粘贴导入网页版的备份。</view>
+    <view class="btn" bindtap="goSettings">去设置</view>
+  </view>
+
+  <view wx:if="{{urgentCount > 0}}" class="card urgent">
+    <view class="row">
+      <view class="grow">
+        <view class="u-lbl">近期需要还款</view>
+        <view class="u-amt">¥{{urgentSum}}</view>
+      </view>
+      <view class="u-r">
+        <view class="u-lbl">涉及</view>
+        <view class="u-amt">{{urgentCount}}<text class="u-unit">张卡</text></view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:for="{{views}}" wx:key="id" class="card cc s-{{item.st}}">
+    <view class="cc-top">
+      <view class="grow">
+        <view class="cc-name">{{item.label}}</view>
+        <view class="cc-meta">{{item.meta}}</view>
+      </view>
+      <view class="pill p-{{item.st}}">{{item.pill}}</view>
+    </view>
+
+    <block wx:if="{{item.idle}}">
+      <view class="row" style="margin-top:18rpx">
+        <view class="grow idle-line {{item.idleSoon ? 'c-hot' : 'c-dim'}}">{{item.idleLine}}</view>
+        <view class="btn sm ghost" bindtap="goSwipe" data-id="{{item.id}}">记刷卡</view>
+      </view>
+    </block>
+
+    <block wx:else>
+      <view class="cc-body">
+        <view class="amt">¥{{item.amt}}<text class="amt-unit">待还</text></view>
+        <view class="cd">{{item.cdText}} <text class="cd-n n-{{item.st}}">{{item.cdNum}}</text> 天</view>
+      </view>
+      <view class="track"><view class="fill f-{{item.st}}" style="width:{{item.pct}}%"></view></view>
+      <view class="ticks"><text>{{item.tickL}}</text><text>{{item.tickR}}</text></view>
+      <view class="note {{item.st === 'bad' ? 'c-bad' : ''}}">{{item.hint}}</view>
+      <view class="acts">
+        <view class="btn sm" bindtap="goSwipe" data-id="{{item.id}}">记刷卡</view>
+        <view wx:if="{{item.hasAmt}}" class="btn sm ghost" bindtap="repay" data-id="{{item.id}}">登记还款</view>
+        <view class="btn sm ghost" bindtap="goHist">明细</view>
+      </view>
+    </block>
+  </view>
+
+  <view wx:if="{{hasCards}}" class="fab" bindtap="goSwipe">＋ 记一笔刷卡</view>
+</view>

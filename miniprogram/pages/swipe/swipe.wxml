@@ -1,0 +1,47 @@
+<view class="wrap">
+  <view class="card">
+    <view class="hint">周期归属按账单日自动计算。</view>
+
+    <view class="lbl">用哪张卡</view>
+    <view class="chips">
+      <view wx:for="{{cards}}" wx:key="id"
+            class="chip {{item.id === selCard ? 'on' : ''}}"
+            bindtap="tapCard" data-id="{{item.id}}">
+        {{item.label}}<text class="chip-sub">{{item.sub}}</text>
+      </view>
+    </view>
+
+    <block wx:if="{{terms.length}}">
+      <view class="lbl">用哪台机器 <text class="lbl-sub">· 已按闲置排序</text></view>
+      <view class="chips">
+        <view wx:for="{{terms}}" wx:key="id"
+              class="chip {{item.id === selTerm ? 'on' : ''}}"
+              bindtap="tapTerm" data-id="{{item.id}}">
+          {{item.name}}<text class="chip-sub">{{item.sub}}</text>
+        </view>
+      </view>
+    </block>
+    <view wx:else class="tip">还没添加刷卡机，可以先只记金额。</view>
+
+    <view class="two" style="margin-top:8rpx">
+      <view>
+        <view class="lbl">金额</view>
+        <input class="ipt" type="digit" placeholder="0.00"
+               value="{{amount}}" bindinput="onAmount" />
+      </view>
+      <view>
+        <view class="lbl">日期</view>
+        <picker mode="date" value="{{date}}" bindchange="onDate">
+          <view class="ipt">{{date}}</view>
+        </picker>
+      </view>
+    </view>
+
+    <view class="lbl">备注（选填）</view>
+    <input class="ipt" value="{{note}}" bindinput="onNote" />
+
+    <view wx:if="{{warn}}" class="warnbox {{warn.level === 'bad' ? 'c-bad' : 'c-hot'}}">{{warn.text}}</view>
+
+    <view class="btn" style="margin-top:36rpx" bindtap="saveTx">保存</view>
+  </view>
+</view>

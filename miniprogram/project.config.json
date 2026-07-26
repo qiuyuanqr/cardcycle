@@ -1,0 +1,15 @@
+{
+  "appid": "wx43420b254f2f2bdd",
+  "compileType": "miniprogram",
+  "libVersion": "latest",
+  "projectname": "cardcycle",
+  "setting": {
+    "es6": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": true,
+    "coverView": true,
+    "autoAudits": false
+  },
+  "condition": {}
+}

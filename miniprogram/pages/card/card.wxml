@@ -1,0 +1,34 @@
+<view class="wrap">
+  <view class="card">
+    <view class="two">
+      <view>
+        <view class="lbl" style="margin-top:0">银行</view>
+        <input class="ipt" placeholder="广发银行" value="{{bank}}" bindinput="onBank" />
+      </view>
+      <view>
+        <view class="lbl" style="margin-top:0">卡号后四位（选填）</view>
+        <input class="ipt" type="number" maxlength="4" placeholder="1234"
+               value="{{last4}}" bindinput="onLast4" />
+      </view>
+    </view>
+
+    <view class="two">
+      <view>
+        <view class="lbl">账单日（每月几号）</view>
+        <input class="ipt" type="number" placeholder="10" value="{{stmt}}" bindinput="onStmt" />
+      </view>
+      <view>
+        <view class="lbl">提前几天还款</view>
+        <input class="ipt" type="number" value="{{buf}}" bindinput="onBuf" />
+      </view>
+    </view>
+
+    <view class="preview">{{preview}}</view>
+
+    <view class="lbl">额度（选填）</view>
+    <input class="ipt" type="number" placeholder="50000" value="{{limit}}" bindinput="onLimit" />
+
+    <view class="btn" style="margin-top:36rpx" bindtap="saveCard">保存</view>
+    <view wx:if="{{isEdit}}" class="btn danger" style="margin-top:18rpx" bindtap="delCard">删除这张卡</view>
+  </view>
+</view>
