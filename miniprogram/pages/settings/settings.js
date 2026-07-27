@@ -132,18 +132,23 @@ Page({
   },
 
   wipe() {
+    const S = this.S;
     wx.showModal({
-      title: '清空全部数据', content: '无法恢复。确定？',
-      confirmColor: '#e0384a',
+      title: '清空全部数据',
+      content: '将删除本机的 ' + S.cards.length + ' 张信用卡、'
+             + S.terminals.length + ' 个商户、' + S.txns.length
+             + ' 条消费记录，无法恢复。建议先「复制备份」。确定清空？',
+      confirmText: '清空', confirmColor: '#e0384a',
       success: r => {
         if (!r.confirm) return;
         wx.showModal({
-          title: '再确认一次', content: '真的要清空全部数据？',
-          confirmColor: '#e0384a',
+          title: '再确认一次', content: '数据清空后无法找回，真的要清空？',
+          confirmText: '清空', confirmColor: '#e0384a',
           success: r2 => {
             if (!r2.confirm) return;
             store.save(JSON.parse(JSON.stringify(store.DEF)));
             this.refresh();
+            wx.showToast({ title: '已清空', icon: 'success' });
           }
         });
       }

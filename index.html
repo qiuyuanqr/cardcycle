@@ -299,7 +299,7 @@ function cardHTML(c,k){
     return '<div class="card cc s-idle" style="padding-top:13px;padding-bottom:13px">'+head
       +'<div class="row" style="margin-top:10px">'
       +'<div class="grow" style="font-size:12.5px;color:'+(soon?'var(--hot)':'var(--faint)')+'">'+line+'</div>'
-      +'<button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记刷卡</button></div></div>';
+      +'<button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button></div></div>';
   }
 
   const amt=k.cur+k.over;
@@ -310,7 +310,7 @@ function cardHTML(c,k){
     +'<div class="track"><div class="fill" style="width:'+k.pct+'%"></div></div>'
     +'<div class="ticks"><span>'+md(k.winStart)+' 起可刷</span><span>'+md(k.due)+' 前还清</span></div>'
     +'<div class="note'+(k.st==='bad'?' alert':'')+'">'+esc(k.hint)+'</div>'
-    +'<div class="acts"><button class="btn sm" onclick="openSwipe(\''+c.id+'\')">记刷卡</button>'
+    +'<div class="acts"><button class="btn sm" onclick="openSwipe(\''+c.id+'\')">记消费</button>'
     +'<button class="btn sm ghost" onclick="openRepay(\''+c.id+'\')">登记还款</button>'
     +'<button class="btn sm ghost" onclick="go(\'hist\',\''+c.id+'\')">明细</button></div></div>';
 }
@@ -428,6 +428,21 @@ function renderSet(){
     +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="商户名，如 老王便利店">'
     +'<button class="btn" onclick="addTerm()">加</button></div></div>';
 
+  // 参数紧跟信用卡；提醒与数据备份沉底
+  const paramBlock='<div class="sec">参数</div><div class="card">'
+    +'<div class="row" style="justify-content:space-between">'
+    +'<div><div style="font-size:14px;font-weight:550">多人管理</div>'
+    +'<div class="tip" style="margin-top:2px">为朋友代管卡片时开启，界面会出现「持卡人」。<br>默认关闭：只管自己的卡，界面更干净。</div></div>'
+    +'<button class="btn sm '+(isMulti()?'':'ghost')+'" onclick="toggleMulti()">'+(isMulti()?'已开启':'已关闭')+'</button></div>'
+    +'<label>新卡默认提前天数</label>'
+    +'<input type="number" min="0" max="10" value="'+(S.settings.buffer||3)+'" onchange="setBuffer(this.value)">'
+    +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
+    +'<label>同商户同卡最小间隔（天）</label>'
+    +'<input type="number" min="0" max="60" value="'+(S.settings.minGap||7)+'" onchange="setGap(this.value)">'
+    +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div></div>';
+  // 插到「信用卡」和「常用商户」之间
+  h = h.replace('<div class="sec">常用商户</div>', paramBlock+'<div class="sec">常用商户</div>');
+
   if(isMulti()){
     h+='<div class="sec">持卡人</div><div class="card">'
       +S.people.map(p=>'<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(p.name)+'</div>'
@@ -441,7 +456,7 @@ function renderSet(){
     +'<div style="font-size:13px;line-height:1.7;color:var(--dim)">'
     +'导出未来 12 个月的日历文件，导入 iPhone 日历后由系统按时提醒，不用打开这个网页。</div>'
     +'<button class="btn full" style="margin-top:12px" onclick="exportICS()">导出日历提醒（.ics）</button>'
-    +'<div class="tip">每张卡每月两条：<b>可刷卡</b>（账单日次日）和 <b>该还款</b>（各自的提醒日，'
+    +'<div class="tip">每张卡每月两条提醒：<b>新周期开始</b>（账单日次日）和 <b>该还款</b>（各自的提醒日，'
     +'并在 3 天前、1 天前、当天上午 9 点各响一次）。<br>'
     +'iPhone：导出后选「存储到文件」→ 在文件 App 里点它 → 加入日历。'
     +'建议新建一个叫「卡周期」的日历分组专门放，下次重新导出前整组删掉旧的。</div></div>';
@@ -452,29 +467,9 @@ function renderSet(){
     +'<div class="row" style="margin-top:12px"><button class="btn ghost grow" onclick="openExport()">复制/导出</button>'
     +'<button class="btn ghost grow" onclick="openImport()">粘贴/导入</button></div>'
     +'<div class="tip">'+(S.settings.lastBackup?'上次备份：'+S.settings.lastBackup:'还没有备份过')
-    +' · 存储状态：<span id="persistState">检测中…</span></div></div>';
-
-  h+='<div class="sec">参数</div><div class="card">'
-    +'<div class="row" style="justify-content:space-between">'
-    +'<div><div style="font-size:14px;font-weight:550">多人管理</div>'
-    +'<div class="tip" style="margin-top:2px">为朋友代管卡片时开启，界面会出现「持卡人」。<br>默认关闭：只管自己的卡，界面更干净。</div></div>'
-    +'<button class="btn sm '+(isMulti()?'':'ghost')+'" onclick="toggleMulti()">'+(isMulti()?'已开启':'已关闭')+'</button></div>'
-    +'<label>新卡默认提前天数</label>'
-    +'<input type="number" min="0" max="10" value="'+(S.settings.buffer||3)+'" onchange="setBuffer(this.value)">'
-    +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
-    +'<label>同商户同卡最小间隔（天）</label>'
-    +'<input type="number" min="0" max="60" value="'+(S.settings.minGap||7)+'" onchange="setGap(this.value)">'
-    +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div>'
-    +'<button class="btn danger full" style="margin-top:16px" onclick="wipe()">清空全部数据</button></div>';
-
-  h+='<div class="card" style="background:transparent;box-shadow:none;border:1px dashed var(--line)">'
-    +'<div style="font-size:12px;color:var(--faint);line-height:1.8">'
-    +'<b style="color:var(--dim)">两点提醒</b><br>'
-    +'1. 银行对信用卡资金用途有明确规定，信用卡应当用于真实消费。非真实交易的资金套取属违规，'
-    +'被认定可能面临降额、冻结乃至更严重后果。本工具只负责记账与提醒。<br>'
-    +'2. 长期零账单，征信上确实看不到额度占用，但也意味着这些卡几乎没有用卡记录。'
-    +'部分银行的提额模型和某些贷款审批反而看重稳定的用卡与按时还款历史，值得权衡。'
-    +'</div></div>';
+    +' · 存储状态：<span id="persistState">检测中…</span></div>'
+    +'<button class="btn danger full" style="margin-top:14px" onclick="wipe()">清空全部数据</button>'
+    +'<div class="tip">删除本机记录的全部信用卡、商户和消费流水，仅影响这台设备，无法恢复。清空前请先导出备份。</div></div>';
 
   el.innerHTML=h;
   showPersist();
@@ -593,7 +588,7 @@ function drawSwipe(){
     +(k.toAnchor===0?'今天就是账单日':'距账单日只剩 '+k.toAnchor+' 天')
     +'），现在刷会计入 '+md(k.anchor)+' 的账单。建议等 '+md(addD(k.anchor,1))+' 起再刷。</div>';
   else if(k.toDue<=1) warn='<div class="hint" style="color:var(--hot)">注意：本期还款截止 '+md(k.due)+'，现在刷的钱也要在那之前还清。</div>';
-  showModal('<h3>记一笔刷卡</h3><div class="hint">周期归属按账单日自动计算。</div>'
+  showModal('<h3>记一笔消费</h3><div class="hint">周期归属按账单日自动计算。</div>'
     +'<label>用哪张卡</label><div class="chips">'
     +S.cards.map(c=>{const kk=calc(c);
       return '<div class="chip'+(c.id===swipeCard?' on':'')+'" onclick="swipeCard=\''+c.id+'\';drawSwipe()">'
@@ -725,8 +720,9 @@ function fileImport(inp){
   r.readAsText(f);
 }
 function wipe(){
-  if(!confirm('清空全部数据，无法恢复。确定？'))return;
-  if(!confirm('再确认一次：真的清空？'))return;
+  if(!confirm('将删除本机的 '+S.cards.length+' 张信用卡、'+S.terminals.length+' 个商户、'
+    +S.txns.length+' 条消费记录，无法恢复。建议先导出备份。确定清空？'))return;
+  if(!confirm('再确认一次：数据清空后无法找回，真的要清空？'))return;
   S=structuredClone(DEF);save();renderAll();
 }
 

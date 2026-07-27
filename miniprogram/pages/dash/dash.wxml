@@ -30,7 +30,7 @@
     <block wx:if="{{item.idle}}">
       <view class="row" style="margin-top:18rpx">
         <view class="grow idle-line {{item.idleSoon ? 'c-hot' : 'c-dim'}}">{{item.idleLine}}</view>
-        <view class="btn sm ghost" bindtap="goSwipe" data-id="{{item.id}}">记刷卡</view>
+        <view class="btn sm ghost" bindtap="goSwipe" data-id="{{item.id}}">记消费</view>
       </view>
     </block>
 
@@ -43,12 +43,12 @@
       <view class="ticks"><text>{{item.tickL}}</text><text>{{item.tickR}}</text></view>
       <view class="note {{item.st === 'bad' ? 'c-bad' : ''}}">{{item.hint}}</view>
       <view class="acts">
-        <view class="btn sm" bindtap="goSwipe" data-id="{{item.id}}">记刷卡</view>
+        <view class="btn sm" bindtap="goSwipe" data-id="{{item.id}}">记消费</view>
         <view wx:if="{{item.hasAmt}}" class="btn sm ghost" bindtap="repay" data-id="{{item.id}}">登记还款</view>
         <view class="btn sm ghost" bindtap="goHist">明细</view>
       </view>
     </block>
   </view>
 
-  <view wx:if="{{hasCards}}" class="fab" bindtap="goSwipe">＋ 记一笔刷卡</view>
+  <view wx:if="{{hasCards}}" class="fab" bindtap="goSwipe">记一笔消费</view>
 </view>
