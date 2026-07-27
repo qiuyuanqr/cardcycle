@@ -138,42 +138,100 @@ Page({
         content: '这次没能读出本机数据，导出的会是空的。请退出小程序重新进入后再备份。' });
       return;
     }
+    const text = JSON.stringify(S);
+    const kb = (text.length / 1024).toFixed(1);
     wx.setClipboardData({
-      data: JSON.stringify(S),
+      data: text,
       success: () => {
         S.settings.lastBackup = Core.fd(Core.today());
         store.save(S); this.refresh();
         wx.showModal({
           title: '已复制到剪贴板',
-          content: '请立刻粘贴到备忘录、微信收藏或文件传输助手保存。',
+          content: '这份备份约 ' + kb + ' KB（' + S.txns.length + ' 笔消费、'
+                 + S.payments.length + ' 笔还款都在里面）。\n'
+                 + '请立刻粘贴到备忘录、微信收藏或文件传输助手保存——'
+                 + '粘完请确认结尾是「}」，中间被截断的备份是恢复不了的。',
           showCancel: false
         });
+      },
+      // 剪贴板放不下或被系统拒绝时必须说话，否则用户以为备份好了，其实什么都没存
+      fail: err => wx.showModal({
+        title: '没能复制', showCancel: false,
+        content: '备份没有放进剪贴板（' + ((err && err.errMsg) || '未知原因') + '）。'
+               + '这份数据约 ' + kb + ' KB，可能太大了。请改用「导出备份文件」。'
+      })
+    });
+  },
+  /* 备份成文件转发到聊天：数据攒多了剪贴板未必装得下，文件这条路更稳，
+     也方便存进「文件传输助手」长期留底。 */
+  exportFile() {
+    const S = this.S;
+    if (S.readFailed) {
+      wx.showModal({ title: '现在不能备份', showCancel: false,
+        content: '这次没能读出本机数据，导出的会是空的。请退出小程序重新进入后再备份。' });
+      return;
+    }
+    const name = '卡周期备份-' + Core.fd(Core.today()) + '.txt';
+    const path = wx.env.USER_DATA_PATH + '/' + name;
+    // 同步写文件：shareFileMessage 必须留在点击事件的调用链里，
+    // 放进异步回调会因“非用户触发”而静默失败（表现为一直「未发送」）。
+    try { wx.getFileSystemManager().writeFileSync(path, JSON.stringify(S), 'utf8'); }
+    catch (e) { wx.showToast({ title: '生成失败', icon: 'error' }); return; }
+    wx.shareFileMessage({
+      filePath: path, fileName: name,
+      success: () => {
+        S.settings.lastBackup = Core.fd(Core.today());
+        store.save(S); this.refresh();
+        wx.showToast({ title: '备份文件已发出', icon: 'success' });
+      },
+      fail: err => {
+        if (err && /cancel/.test(err.errMsg || '')) return;   // 用户自己取消不算错
+        wx.showModal({ title: '没有发出去', showCancel: false,
+          content: '文件已生成但没能转发（' + ((err && err.errMsg) || '未知原因')
+                 + '）。请再试一次，或改用「复制备份」。' });
       }
     });
   },
+
   importJSON() {
-    wx.getClipboardData({
+    wx.getClipboardData({ success: res => this.applyBackupText(res.data || '', '剪贴板') });
+  },
+
+  /* 从聊天记录里选回之前发出去的备份文件 */
+  importFile() {
+    wx.chooseMessageFile({
+      count: 1, type: 'file', extension: ['txt', 'json'],
       success: res => {
-        let d;
-        try { d = JSON.parse((res.data || '').trim()); }
-        catch (e) { wx.showToast({ title: '剪贴板不是备份数据', icon: 'none' }); return; }
-        if (!d || !Array.isArray(d.cards)) {
-          wx.showToast({ title: '数据格式不对', icon: 'none' }); return;
-        }
-        wx.showModal({
-          title: '导入备份',
-          content: '将导入 ' + d.cards.length + ' 张卡、' + (d.txns || []).length
-                 + ' 条记录，覆盖当前全部数据。确定？',
-          success: r => {
-            if (!r.confirm) return;
-            // 必须走 normalize：2.2 以前的备份没有 payments、只有逐笔 repaid 标记，
-            // 不迁移就等于把已还的钱全变回待还，而且存盘后再也没有补救机会。
-            const S = store.normalize(d);
-            store.save(S);
-            this.refresh();
-            wx.showToast({ title: '导入成功', icon: 'success' });
-          }
-        });
+        const f = (res.tempFiles || [])[0];
+        if (!f) return;
+        let text = '';
+        try { text = wx.getFileSystemManager().readFileSync(f.path, 'utf8'); }
+        catch (e) { wx.showToast({ title: '读不出这个文件', icon: 'none' }); return; }
+        this.applyBackupText(text, '这个文件');
+      }
+    });
+  },
+
+  /* 剪贴板与文件两条导入路径共用：解析 → 确认 → normalize 落盘 */
+  applyBackupText(text, where) {
+    let d;
+    try { d = JSON.parse((text || '').trim()); }
+    catch (e) { wx.showToast({ title: where + '不是备份数据', icon: 'none' }); return; }
+    if (!d || !Array.isArray(d.cards)) {
+      wx.showToast({ title: '数据格式不对', icon: 'none' }); return;
+    }
+    wx.showModal({
+      title: '导入备份',
+      content: '将导入 ' + d.cards.length + ' 张卡、' + (d.txns || []).length + ' 笔消费、'
+             + (d.payments || []).length + ' 笔还款，覆盖当前全部数据。确定？',
+      success: r => {
+        if (!r.confirm) return;
+        // 必须走 normalize：2.2 以前的备份没有 payments、只有逐笔 repaid 标记，
+        // 不迁移就等于把已还的钱全变回待还，而且存盘后再也没有补救机会。
+        const S = store.normalize(d);
+        store.save(S);
+        this.refresh();
+        wx.showToast({ title: '导入成功', icon: 'success' });
       }
     });
   },

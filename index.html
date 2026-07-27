@@ -760,9 +760,13 @@ function markBackup(){S.settings.lastBackup=fd(today());save();}
 
 function openExport(){
   const txt=JSON.stringify(S);
+  const kb=(txt.length/1024).toFixed(1);
   showModal('<h3>导出备份</h3>'
     +'<div class="hint">把下面这段文字复制走，存到备忘录、微信收藏或邮件里。'
-    +'换手机时用「粘贴/导入」贴回来即可。</div>'
+    +'换手机时用「粘贴/导入」贴回来即可。<br>'
+    +'这份约 <b>'+kb+' KB</b>——'+S.txns.length+' 笔消费、'+S.payments.length+' 笔还款都在里面'
+    +'（待还金额是拿它们现算的，少了就恢复不出来）。'
+    +'粘贴后请确认结尾是「}」，中间被截断的备份是恢复不了的。</div>'
     +'<textarea id="expBox" rows="7" readonly style="margin-top:12px">'+esc(txt)+'</textarea>'
     +'<div class="row" style="margin-top:10px">'
     +'<button class="btn grow" onclick="copyExp()">复制到剪贴板</button>'

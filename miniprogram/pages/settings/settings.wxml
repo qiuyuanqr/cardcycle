@@ -92,6 +92,15 @@
       <view class="btn ghost grow" bindtap="exportJSON">复制备份</view>
       <view class="btn ghost grow" bindtap="importJSON">从剪贴板导入</view>
     </view>
+    <view class="row" style="margin-top:14rpx">
+      <view class="btn ghost grow" bindtap="exportFile">导出备份文件</view>
+      <view class="btn ghost grow" bindtap="importFile">从文件导入</view>
+    </view>
+    <view class="tip">
+      消费和还款流水都在备份里（待还金额是拿它们现算的，少了就恢复不出来），
+      所以记得越久备份越长。攒到几百笔以后剪贴板未必装得下，
+      建议用「导出备份文件」转发给文件传输助手留底。
+    </view>
     <view class="tip">{{lastBackup ? '上次备份：' + lastBackup : '还没有备份过'}}</view>
     <view class="btn danger" style="margin-top:26rpx" bindtap="wipe">清空全部数据</view>
     <view class="tip">删除本机记录的全部信用卡、商户和消费流水，仅影响这台手机，无法恢复。清空前请先复制备份。</view>
