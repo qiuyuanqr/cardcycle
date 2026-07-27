@@ -71,6 +71,7 @@
       这次没能读出本机数据——数据没有丢，也没有被覆盖。请退出小程序重新进入；
       在恢复之前不要记账、不要备份。
     </view>
+    <view class="kv"><text class="k">当前版本</text><text class="v">{{env.version}}</text></view>
     <view class="kv"><text class="k">当前环境</text><text class="v">{{env.envName}}</text></view>
     <view class="kv"><text class="k">本环境数据</text>
       <text class="v">{{env.cards}} 张卡 · {{env.txns}} 笔消费 · {{env.payments}} 笔还款</text></view>

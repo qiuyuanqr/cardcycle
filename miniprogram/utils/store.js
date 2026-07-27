@@ -5,6 +5,12 @@
    数据格式与网页版完全一致：网页备份可粘贴导入小程序，反之亦然。 */
 const Core = require('./core.js');
 
+/* 当前代码版本，显示在设置页「本机存储」里。
+   微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
+   靠它判断不了手上跑的是哪一版，所以这里硬编码。
+   ★ 每次 cli upload 改 -v 时，这里要同步改。 */
+const APP_VERSION = '1.0.14';
+
 const KEY = 'cardcycle.v1';
 const DEF = {
   people: [], cards: [], terminals: [], txns: [], payments: [],
@@ -90,6 +96,7 @@ function storageEnv(S) {
   } catch (e) {}
   return {
     envName: NAME[env] || '未知环境',
+    version: APP_VERSION,             // 手上这份代码是哪一版，用来确认有没有更新到最新
     isolated: env !== 'release',      // 非正式版都是独立存储空间
     cards: S.cards.length, txns: S.txns.length, payments: S.payments.length,
     sizeText: size,
