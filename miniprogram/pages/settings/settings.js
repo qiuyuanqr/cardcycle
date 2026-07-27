@@ -149,12 +149,15 @@ Page({
   },
   writeCalendar(rem) {
     if (!rem.length) return;
-    let i = 0, fail = 0;
-    const errs = {};   // errMsg → 次数：安卓失败原因五花八门，写完把最主要的展示出来
-    wx.showLoading({ title: '写入中 0/' + rem.length, mask: true });
-    const done = () => {
+    // 安卓限制：addPhoneCalendar 只能在用户点击的调用链里发起
+    // （errMsg: can only be invoked by user TAP gesture）——
+    // 「写完一条再写下一条」从第二条起就脱离点击链、必然全挂。
+    // 与 shareFileMessage 同一个坑：全部调用必须在本次点击里同步发出，结果在回调里汇总。
+    let doneN = 0, fail = 0;
+    const errs = {};   // errMsg → 次数：写完把最主要的失败原因展示出来
+    wx.showLoading({ title: '写入中…', mask: true });
+    const finish = () => {
       wx.hideLoading();
-      // 取出现最多的失败原因，去掉冗余前缀方便阅读
       const top = Object.keys(errs).sort((a, b) => errs[b] - errs[a])[0] || '';
       const why = top ? '（' + top.replace(/^addPhoneCalendar:fail\s*/, '') + '）' : '';
       if (fail >= rem.length) {
@@ -168,13 +171,7 @@ Page({
                  + '重新写入前，建议先在日历里删掉旧的「卡周期」提醒，避免重复。' });
       }
     };
-    const step = () => {
-      i++;
-      wx.showLoading({ title: '写入中 ' + i + '/' + rem.length, mask: true });
-      if (i >= rem.length) { done(); return; }
-      setTimeout(() => write(rem[i], false), 300);   // 安卓连续调用会被限频，隔一拍再写
-    };
-    const write = (r, isRetry) => {
+    rem.forEach(r => {
       const d = Core.pd(r.date);
       const start = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9).getTime() / 1000);
       wx.addPhoneCalendar({
@@ -183,16 +180,19 @@ Page({
         endTime: start + 3600,
         description: r.desc,
         alarm: true,
-        success: () => step(),
         fail: e => {
-          if (!isRetry) { setTimeout(() => write(r, true), 800); return; }  // 歇 800ms 重试一次
           const m = (e && e.errMsg) || '未知原因';
           errs[m] = (errs[m] || 0) + 1;
-          fail++; step();
+          fail++;
+        },
+        complete: () => {
+          doneN++;
+          if (doneN % 10 === 0)
+            wx.showLoading({ title: '写入中 ' + doneN + '/' + rem.length, mask: true });
+          if (doneN >= rem.length) finish();
         }
       });
-    };
-    write(rem[0], false);
+    });
   },
 
   /* ---- 提醒：导出 .ics 文件 ---- */
