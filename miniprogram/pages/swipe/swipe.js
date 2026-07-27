@@ -4,7 +4,8 @@ const Core = store.Core;
 Page({
   data: {
     cards: [], terms: [], selCard: '', selTerm: '',
-    amount: '', date: '', todayStr: '', note: '', warn: null
+    amount: '', date: '', todayStr: '', note: '', warn: null,
+    styleList: false, cardNames: [], cardIdx: 0, termNames: [], termIdx: 0
   },
 
   onLoad(q) {
@@ -20,7 +21,7 @@ Page({
     }
     const selCard = q.cardId && store.cardById(S, q.cardId) ? q.cardId : S.cards[0].id;
     const t = Core.fd(Core.today());
-    this.setData({ date: t, todayStr: t });
+    this.setData({ date: t, todayStr: t, styleList: S.settings.swipeStyle === 'list' });
     this.select(selCard);
   },
 
@@ -30,12 +31,21 @@ Page({
     this.setData({
       cards: opt.cards, terms: opt.terms, selCard: cardId,
       selTerm: opt.terms.length ? opt.terms[0].id : '',
+      cardNames: opt.cards.map(c => c.label + '（' + c.sub + '）'),
+      cardIdx: Math.max(0, opt.cards.findIndex(c => c.id === cardId)),
+      termNames: opt.terms.map(t => t.name + '（' + t.sub + '）'),
+      termIdx: 0,
       warn: store.swipeWarning(S, cardId)
     });
   },
 
   tapCard(e) { this.select(e.currentTarget.dataset.id); },
   tapTerm(e) { this.setData({ selTerm: e.currentTarget.dataset.id }); },
+  pickCard(e) { this.select(this.data.cards[+e.detail.value].id); },
+  pickTerm(e) {
+    const i = +e.detail.value;
+    this.setData({ termIdx: i, selTerm: this.data.terms[i].id });
+  },
   onAmount(e) { this.setData({ amount: e.detail.value }); },
   onNote(e) { this.setData({ note: e.detail.value }); },
   onDate(e) { this.setData({ date: e.detail.value }); },

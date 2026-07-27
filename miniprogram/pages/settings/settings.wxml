@@ -8,6 +8,8 @@
         <view class="tx-t">{{item.label}}</view>
         <view class="tx-s">{{item.sub}}</view>
       </view>
+      <view wx:if="{{custom}}" class="btn sm ghost" bindtap="moveCard" data-id="{{item.id}}" data-dir="up">↑</view>
+      <view wx:if="{{custom}}" class="btn sm ghost" bindtap="moveCard" data-id="{{item.id}}" data-dir="down">↓</view>
       <view class="btn sm ghost" bindtap="editCard" data-id="{{item.id}}">改</view>
     </view>
     <view class="btn ghost" style="margin-top:22rpx" bindtap="addCard">＋ 添加信用卡</view>
@@ -19,6 +21,17 @@
     <input class="ipt" type="number" value="{{buffer}}" bindblur="onBuffer" />
     <view class="lbl">同商户同卡最小间隔（天）</view>
     <input class="ipt" type="number" value="{{minGap}}" bindblur="onGap" />
+    <view class="lbl">概览卡片排序</view>
+    <picker range="{{sortNames}}" value="{{sortIdx}}" bindchange="onSort">
+      <view class="ipt">{{sortNames[sortIdx]}}</view>
+    </picker>
+    <view wx:if="{{custom}}" class="tip">在上方「信用卡」列表里用 ↑↓ 调整显示顺序。</view>
+    <view wx:else class="tip">最近变动 = 谁最后有消费或还款，谁排最上面。</view>
+    <view class="lbl">记消费选卡方式</view>
+    <picker range="{{styleNames}}" value="{{styleIdx}}" bindchange="onStyle">
+      <view class="ipt">{{styleNames[styleIdx]}}</view>
+    </picker>
+    <view class="tip">卡和商户多的时候，用「下拉列表」更紧凑、好选。</view>
   </view>
 
   <view class="sec">常用商户</view>

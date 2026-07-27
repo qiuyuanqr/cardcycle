@@ -220,7 +220,9 @@ const bufOf = c => CardCycleCore.bufOf(c, S.settings);
    ===================================================================== */
 const KEY='cardcycle.v1';
 const DEF={people:[],cards:[],terminals:[],txns:[],payments:[],
-           settings:{buffer:3,minGap:7,lastBackup:null}};
+           settings:{buffer:3,minGap:7,lastBackup:null,
+                     cardSort:'smart',      // 概览排序：smart 紧急程度 | recent 最近变动 | custom 自定义
+                     swipeStyle:'chips'}};  // 记消费选卡方式：chips 平铺 | list 下拉列表
 let S=load();
 
 // 备份/存储数据 → 内部状态（含 2.2 以前逐笔 repaid 标记的旧数据迁移）
@@ -263,6 +265,13 @@ function termLastFor(tid,cid){const d=S.txns.filter(t=>t.terminalId===tid&&t.car
    概览
    ===================================================================== */
 const RANK={bad:0,hot:1,warn:2,ok:3,idle:4};
+// 某张卡最后一次账户变动（消费或还款）的日期，无变动返回 ''
+function lastActOf(cid){
+  let m='';
+  for(const t of S.txns)if(t.cardId===cid&&t.date>m)m=t.date;
+  for(const p of S.payments)if(p.cardId===cid&&p.date>m)m=p.date;
+  return m;
+}
 function renderDash(){
   const el=document.getElementById('v-dash');
   if(!S.cards.length){
@@ -270,8 +279,11 @@ function renderDash(){
       +'<button class="btn full" onclick="go(\'set\')">去设置</button></div>';
     return;
   }
-  const list=S.cards.map(c=>({c,k:calc(c)}))
-    .sort((a,b)=>RANK[a.k.st]-RANK[b.k.st]||a.k.toDue-b.k.toDue);
+  const mode=S.settings.cardSort||'smart';
+  const list=S.cards.map(c=>({c,k:calc(c),act:lastActOf(c.id)}));
+  if(mode==='smart') list.sort((a,b)=>RANK[a.k.st]-RANK[b.k.st]||a.k.toDue-b.k.toDue);
+  else if(mode==='recent') list.sort((a,b)=>b.act.localeCompare(a.act));  // 无变动的卡沉底
+  // custom：保持「设置」里排好的数组顺序
   let h='';
 
   // 备份提醒
@@ -302,8 +314,13 @@ function cardHTML(c,k){
   // 本期没刷过的卡收成一行，避免 7 张卡把概览页撑得太长
   if(k.st==='idle'){
     const soon=k.toDue<=0;   // 已过安全窗口：现在刷会计入即将出的账单
-    const line = soon ? '窗口已过 · '+md(addD(k.anchor,1))+' 起再刷'
-                      : '可刷至 '+md(addD(k.due,-1))+' · '+md(k.due)+' 前还清';
+    // 存款（还款超出消费的部分）：下次消费自动抵扣
+    const tot=S.txns.filter(t=>t.cardId===c.id).reduce((s,t)=>s+t.amount,0);
+    const paid=S.payments.filter(p=>p.cardId===c.id).reduce((s,p)=>s+p.amount,0);
+    const dep=Math.max(0,Math.round((paid-tot)*100)/100);
+    const line = (dep>0?'存款 ¥'+money(dep)+' 自动抵扣 · ':'')
+      + (soon ? '窗口已过 · '+md(addD(k.anchor,1))+' 起再刷'
+              : '可刷至 '+md(addD(k.due,-1))+' · '+md(k.due)+' 前还清');
     return '<div class="card cc s-idle" style="padding-top:13px;padding-bottom:13px">'+head
       +'<div class="row" style="margin-top:10px">'
       +'<div class="grow" style="font-size:12.5px;color:'+(soon?'var(--hot)':'var(--faint)')+'">'+line+'</div>'
@@ -350,7 +367,8 @@ function renderHist(){
     +'<div class="kv"><span>消费总额</span><b>¥'+money(tot)+'</b></div>'
     +'<div class="kv"><span>已还款</span><b style="color:var(--ok)">¥'+money(paid)+'</b></div>'
     +'<div class="kv"><span>还差</span><b style="color:var(--hot)">¥'+money(owe)+'</b></div>'
-    +(extra>0?'<div class="kv"><span>多还</span><b>¥'+money(extra)+'</b></div>':'')+'</div>';
+    +(extra>0?'<div class="kv"><span>存款</span><b style="color:var(--ok)">¥'+money(extra)+'</b></div>'
+      +'<div class="tip">存款是还款多出消费的部分，下次消费时自动抵扣。</div>':'')+'</div>';
   h+='<div class="card">'+rows.map(r=>{
     if(r.kind==='pay')
       return '<div class="tx"><div class="tx-l"><div class="tx-t">'+r.date+' &nbsp;¥'+money(r.amount)+'</div>'
@@ -425,12 +443,17 @@ function renderSet(){
   const el=document.getElementById('v-set');
   let h='';
 
+  const custom=(S.settings.cardSort||'smart')==='custom';
+  // 自定义排序时按数组顺序显示（↑↓ 直接调数组），其余按账单日排
+  const cardsSrc=custom?S.cards.slice():S.cards.slice().sort((a,b)=>a.statementDay-b.statementDay);
   h+='<div class="sec">信用卡</div><div class="card">'
-    +(S.cards.length?S.cards.slice().sort((a,b)=>a.statementDay-b.statementDay).map(c=>{
+    +(cardsSrc.length?cardsSrc.map(c=>{
         const d=addD(nextStmt(c.statementDay,today()),-bufOf(c));
         return '<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(cardLabel(c))+'</div>'
         +'<div class="tx-s">账单日 '+c.statementDay+' 号 → 提醒 '+d.getDate()+' 号（提前 '+bufOf(c)+' 天）'
         +(isMulti()?' · '+esc(personName(c.personId)):'')+'</div></div>'
+        +(custom?'<button class="btn sm ghost" onclick="moveCard(\''+c.id+'\',-1)">↑</button>'
+                +'<button class="btn sm ghost" onclick="moveCard(\''+c.id+'\',1)">↓</button>':'')
         +'<button class="btn sm ghost" onclick="openCard(\''+c.id+'\')">改</button>'
         +'<button class="btn sm danger" onclick="delCard(\''+c.id+'\')">删</button></div>';
       }).join(''):'<div class="empty" style="padding:14px">还没有信用卡</div>')
@@ -456,7 +479,20 @@ function renderSet(){
     +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
     +'<label>同商户同卡最小间隔（天）</label>'
     +'<input type="number" min="0" max="60" value="'+(S.settings.minGap||7)+'" onchange="setGap(this.value)">'
-    +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div></div>';
+    +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div>'
+    +'<label>概览卡片排序</label>'
+    +'<select onchange="setCardSort(this.value)">'
+    +[['smart','按紧急程度（默认）'],['recent','按最近变动'],['custom','自定义顺序']]
+      .map(o=>'<option value="'+o[0]+'"'+((S.settings.cardSort||'smart')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
+    +'</select>'
+    +'<div class="tip">'+(custom?'用上方「信用卡」列表里的 ↑↓ 调整显示顺序。'
+                                :'最近变动 = 谁最后有消费或还款，谁排最上面。')+'</div>'
+    +'<label>记消费选卡方式</label>'
+    +'<select onchange="setSwipeStyle(this.value)">'
+    +[['chips','平铺按钮（默认）'],['list','下拉列表']]
+      .map(o=>'<option value="'+o[0]+'"'+((S.settings.swipeStyle||'chips')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
+    +'</select>'
+    +'<div class="tip">卡和商户多的时候，用「下拉列表」更紧凑、好选。</div></div>';
   // 插到「信用卡」和「常用商户」之间
   h = h.replace('<div class="sec">常用商户</div>', paramBlock+'<div class="sec">常用商户</div>');
 
@@ -530,6 +566,14 @@ function delCard(id){
 }
 function setBuffer(v){S.settings.buffer=Math.max(0,Math.min(10,+v||0));save();renderAll();}
 function setGap(v){S.settings.minGap=Math.max(0,Math.min(60,+v||0));save();renderAll();}
+function setCardSort(v){S.settings.cardSort=v;save();renderAll();}
+function setSwipeStyle(v){S.settings.swipeStyle=v;save();renderAll();}
+function moveCard(id,d){
+  const i=S.cards.findIndex(c=>c.id===id),j=i+d;
+  if(i<0||j<0||j>=S.cards.length)return;
+  const t=S.cards[i];S.cards[i]=S.cards[j];S.cards[j]=t;
+  save();renderAll();
+}
 
 /* =====================================================================
    弹窗
@@ -605,19 +649,31 @@ function drawSwipe(){
     +(k.toAnchor===0?'今天就是账单日':'距账单日只剩 '+k.toAnchor+' 天')
     +'），现在刷会计入 '+md(k.anchor)+' 的账单。建议等 '+md(addD(k.anchor,1))+' 起再刷。</div>';
   else if(k.toDue<=1) warn='<div class="hint" style="color:var(--hot)">注意：本期还款截止 '+md(k.due)+'，现在刷的钱也要在那之前还清。</div>';
+  const listMode=S.settings.swipeStyle==='list';
+  const termRows=S.terminals.map(tm=>({tm,
+      g:termLastFor(tm.id,swipeCard)?diffD(pd(termLastFor(tm.id,swipeCard)),t0):null,
+      ga:termLast(tm.id)?diffD(pd(termLast(tm.id)),t0):9999}))
+    .sort((a,b)=>b.ga-a.ga);
+  const cardPick=listMode
+    ?'<select onchange="swipeCard=this.value;drawSwipe()">'
+      +S.cards.map(c=>{const kk=calc(c);
+        return '<option value="'+c.id+'"'+(c.id===swipeCard?' selected':'')+'>'
+          +esc(cardLabel(c))+'（'+kk.label+'）</option>';}).join('')+'</select>'
+    :'<div class="chips">'
+      +S.cards.map(c=>{const kk=calc(c);
+        return '<div class="chip'+(c.id===swipeCard?' on':'')+'" onclick="swipeCard=\''+c.id+'\';drawSwipe()">'
+          +esc(cardLabel(c))+'<small>'+kk.label+'</small></div>';}).join('')+'</div>';
+  const termPick=listMode
+    ?'<select onchange="swipeTerm=this.value">'
+      +termRows.map(o=>'<option value="'+o.tm.id+'"'+(o.tm.id===swipeTerm?' selected':'')+'>'
+        +esc(o.tm.name)+'（'+(o.g===null?'本卡未用过':'本卡 '+o.g+' 天前')+'）</option>').join('')+'</select>'
+    :'<div class="chips">'
+      +termRows.map(o=>'<div class="chip'+(o.tm.id===swipeTerm?' on':'')+'" onclick="swipeTerm=\''+o.tm.id+'\';drawSwipe()">'
+        +esc(o.tm.name)+'<small>'+(o.g===null?'本卡未用过':'本卡 '+o.g+' 天前')+'</small></div>').join('')+'</div>';
   showModal('<h3>记一笔消费</h3><div class="hint">周期归属按账单日自动计算。</div>'
-    +'<label>用哪张卡</label><div class="chips">'
-    +S.cards.map(c=>{const kk=calc(c);
-      return '<div class="chip'+(c.id===swipeCard?' on':'')+'" onclick="swipeCard=\''+c.id+'\';drawSwipe()">'
-        +esc(cardLabel(c))+'<small>'+kk.label+'</small></div>';}).join('')+'</div>'
+    +'<label>用哪张卡</label>'+cardPick
     +(S.terminals.length
-      ?'<label>在哪个商户 <span style="color:var(--faint);font-weight:400">· 已按闲置排序</span></label><div class="chips">'
-       +S.terminals.map(tm=>({tm,
-           g:termLastFor(tm.id,swipeCard)?diffD(pd(termLastFor(tm.id,swipeCard)),t0):null,
-           ga:termLast(tm.id)?diffD(pd(termLast(tm.id)),t0):9999}))
-         .sort((a,b)=>b.ga-a.ga)
-         .map(o=>'<div class="chip'+(o.tm.id===swipeTerm?' on':'')+'" onclick="swipeTerm=\''+o.tm.id+'\';drawSwipe()">'
-           +esc(o.tm.name)+'<small>'+(o.g===null?'本卡未用过':'本卡 '+o.g+' 天前')+'</small></div>').join('')+'</div>'
+      ?'<label>在哪个商户 <span style="color:var(--faint);font-weight:400">· 已按闲置排序</span></label>'+termPick
       :'<div class="hint" style="margin-top:12px">还没添加商户，可以先只记金额。</div>')
     +'<div class="two"><div><label>金额</label><input id="sAmt" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'
     +'<div><label>日期</label><input id="sDate" type="date" value="'+fd(t0)+'"></div></div>'

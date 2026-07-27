@@ -1,16 +1,28 @@
 const store = require('../../utils/store.js');
 const Core = store.Core;
 
+const SORT_KEYS = ['smart', 'recent', 'custom'];
+const STYLE_KEYS = ['chips', 'list'];
+
 Page({
-  data: { cards: [], terms: [], buffer: 3, minGap: 7, lastBackup: null, newTerm: '' },
+  data: {
+    cards: [], terms: [], buffer: 3, minGap: 7, lastBackup: null, newTerm: '',
+    sortNames: ['按紧急程度（默认）', '按最近变动', '自定义顺序'], sortIdx: 0, custom: false,
+    styleNames: ['平铺按钮（默认）', '下拉列表'], styleIdx: 0
+  },
 
   onShow() { this.refresh(); },
 
   refresh() {
     const S = store.load();
     this.S = S;
+    const mode = S.settings.cardSort || 'smart';
+    // 自定义排序时按数组顺序显示（↑↓ 直接调数组），其余按账单日排
+    const cardsSrc = mode === 'custom'
+      ? S.cards.slice()
+      : S.cards.slice().sort((a, b) => a.statementDay - b.statementDay);
     this.setData({
-      cards: S.cards.slice().sort((a, b) => a.statementDay - b.statementDay).map(c => {
+      cards: cardsSrc.map(c => {
         const buf = Core.bufOf(c, S.settings);
         const d = Core.addD(Core.nextStmt(c.statementDay, Core.today()), -buf);
         return {
@@ -24,7 +36,10 @@ Page({
       })),
       buffer: S.settings.buffer || 3,
       minGap: S.settings.minGap || 7,
-      lastBackup: S.settings.lastBackup
+      lastBackup: S.settings.lastBackup,
+      sortIdx: Math.max(0, SORT_KEYS.indexOf(mode)),
+      custom: mode === 'custom',
+      styleIdx: Math.max(0, STYLE_KEYS.indexOf(S.settings.swipeStyle || 'chips'))
     });
   },
 
@@ -67,6 +82,28 @@ Page({
     const S = this.S;
     S.settings.minGap = Math.max(0, Math.min(60, +e.detail.value || 0));
     store.save(S);
+  },
+  onSort(e) {
+    const S = this.S;
+    S.settings.cardSort = SORT_KEYS[+e.detail.value] || 'smart';
+    store.save(S);
+    this.refresh();
+  },
+  onStyle(e) {
+    const S = this.S;
+    S.settings.swipeStyle = STYLE_KEYS[+e.detail.value] || 'chips';
+    store.save(S);
+    this.refresh();
+  },
+  moveCard(e) {
+    const { id, dir } = e.currentTarget.dataset;
+    const S = this.S;
+    const i = S.cards.findIndex(c => c.id === id);
+    const j = i + (dir === 'up' ? -1 : 1);
+    if (i < 0 || j < 0 || j >= S.cards.length) return;
+    const t = S.cards[i]; S.cards[i] = S.cards[j]; S.cards[j] = t;
+    store.save(S);
+    this.refresh();
   },
 
   /* ---- 提醒：写入手机系统日历 ---- */

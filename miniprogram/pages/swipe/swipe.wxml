@@ -2,26 +2,42 @@
   <view class="card">
     <view class="hint">周期归属按账单日自动计算。</view>
 
-    <view class="lbl">用哪张卡</view>
-    <view class="chips">
-      <view wx:for="{{cards}}" wx:key="id"
-            class="chip {{item.id === selCard ? 'on' : ''}}"
-            bindtap="tapCard" data-id="{{item.id}}">
-        {{item.label}}<text class="chip-sub">{{item.sub}}</text>
-      </view>
-    </view>
+    <block wx:if="{{styleList}}">
+      <view class="lbl">用哪张卡</view>
+      <picker range="{{cardNames}}" value="{{cardIdx}}" bindchange="pickCard">
+        <view class="ipt">{{cardNames[cardIdx]}}</view>
+      </picker>
+      <block wx:if="{{terms.length}}">
+        <view class="lbl">在哪个商户 <text class="lbl-sub">· 已按闲置排序</text></view>
+        <picker range="{{termNames}}" value="{{termIdx}}" bindchange="pickTerm">
+          <view class="ipt">{{termNames[termIdx]}}</view>
+        </picker>
+      </block>
+      <view wx:else class="tip">还没添加商户，可以先只记金额。</view>
+    </block>
 
-    <block wx:if="{{terms.length}}">
-      <view class="lbl">在哪个商户 <text class="lbl-sub">· 已按闲置排序</text></view>
+    <block wx:else>
+      <view class="lbl">用哪张卡</view>
       <view class="chips">
-        <view wx:for="{{terms}}" wx:key="id"
-              class="chip {{item.id === selTerm ? 'on' : ''}}"
-              bindtap="tapTerm" data-id="{{item.id}}">
-          {{item.name}}<text class="chip-sub">{{item.sub}}</text>
+        <view wx:for="{{cards}}" wx:key="id"
+              class="chip {{item.id === selCard ? 'on' : ''}}"
+              bindtap="tapCard" data-id="{{item.id}}">
+          {{item.label}}<text class="chip-sub">{{item.sub}}</text>
         </view>
       </view>
+
+      <block wx:if="{{terms.length}}">
+        <view class="lbl">在哪个商户 <text class="lbl-sub">· 已按闲置排序</text></view>
+        <view class="chips">
+          <view wx:for="{{terms}}" wx:key="id"
+                class="chip {{item.id === selTerm ? 'on' : ''}}"
+                bindtap="tapTerm" data-id="{{item.id}}">
+            {{item.name}}<text class="chip-sub">{{item.sub}}</text>
+          </view>
+        </view>
+      </block>
+      <view wx:else class="tip">还没添加商户，可以先只记金额。</view>
     </block>
-    <view wx:else class="tip">还没添加商户，可以先只记金额。</view>
 
     <view class="two" style="margin-top:8rpx">
       <view>

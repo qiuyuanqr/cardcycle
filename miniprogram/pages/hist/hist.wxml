@@ -10,7 +10,7 @@
     <view class="kv"><text class="k">消费总额</text><text class="v">¥{{stat.tot}}</text></view>
     <view class="kv"><text class="k">已还款</text><text class="v c-ok">¥{{stat.paid}}</text></view>
     <view class="kv"><text class="k">还差</text><text class="v c-hot">¥{{stat.un}}</text></view>
-    <view wx:if="{{stat.extra}}" class="kv"><text class="k">多还</text><text class="v">¥{{stat.extra}}</text></view>
+    <view wx:if="{{stat.extra}}" class="kv"><text class="k">存款</text><text class="v c-ok">¥{{stat.extra}}</text></view>
   </view>
 
   <view wx:if="{{!rows.length}}" class="card"><view class="empty">还没有记录。</view></view>

@@ -8,7 +8,9 @@ const Core = require('./core.js');
 const KEY = 'cardcycle.v1';
 const DEF = {
   people: [], cards: [], terminals: [], txns: [], payments: [],
-  settings: { buffer: 3, minGap: 7, lastBackup: null }
+  settings: { buffer: 3, minGap: 7, lastBackup: null,
+              cardSort: 'smart',      // 概览排序：smart 紧急程度 | recent 最近变动 | custom 自定义
+              swipeStyle: 'chips' }   // 记消费选卡方式：chips 平铺 | list 下拉列表
 };
 
 const clone = o => JSON.parse(JSON.stringify(o));
@@ -79,9 +81,14 @@ function cardView(S, c) {
     rank: RANK[k.st], toDue: k.toDue
   };
   if (k.st === 'idle') {
-    v.idleLine = k.toDue <= 0
-      ? '窗口已过 · ' + Core.md(Core.addD(k.anchor, 1)) + ' 起再刷'
-      : '可刷至 ' + Core.md(Core.addD(k.due, -1)) + ' · ' + Core.md(k.due) + ' 前还清';
+    // 存款（还款超出消费的部分）：下次消费自动抵扣
+    const tot = S.txns.filter(t => t.cardId === c.id).reduce((s, t) => s + t.amount, 0);
+    const paid = S.payments.filter(p => p.cardId === c.id).reduce((s, p) => s + p.amount, 0);
+    const dep = Math.max(0, Math.round((paid - tot) * 100) / 100);
+    v.idleLine = (dep > 0 ? '存款 ¥' + Core.money(dep) + ' 自动抵扣 · ' : '')
+      + (k.toDue <= 0
+          ? '窗口已过 · ' + Core.md(Core.addD(k.anchor, 1)) + ' 起再刷'
+          : '可刷至 ' + Core.md(Core.addD(k.due, -1)) + ' · ' + Core.md(k.due) + ' 前还清');
     v.idleSoon = k.toDue <= 0;
   } else {
     v.cdText = k.toDue >= 0 ? '距还款截止' : '距账单日';
@@ -90,10 +97,27 @@ function cardView(S, c) {
   return v;
 }
 
+/* 某张卡最后一次账户变动（消费或还款）的日期，无变动返回 '' */
+function lastActOf(S, cid) {
+  let m = '';
+  for (const t of S.txns) if (t.cardId === cid && t.date > m) m = t.date;
+  for (const p of S.payments) if (p.cardId === cid && p.date > m) m = p.date;
+  return m;
+}
+
 /* 概览页整页数据 */
 function dashData(S) {
-  const views = S.cards.map(c => cardView(S, c))
-    .sort((a, b) => a.rank - b.rank || a.toDue - b.toDue);
+  const mode = S.settings.cardSort || 'smart';
+  const views = S.cards.map(c => {
+    const v = cardView(S, c);
+    v.lastAct = lastActOf(S, c.id);
+    return v;
+  });
+  if (mode === 'smart')
+    views.sort((a, b) => a.rank - b.rank || a.toDue - b.toDue);
+  else if (mode === 'recent')
+    views.sort((a, b) => b.lastAct.localeCompare(a.lastAct));   // 无变动的卡沉底（稳定排序保持原相对顺序）
+  // custom：保持 S.cards 数组顺序（设置页 ↑↓ 直接调整数组）
   const urgent = views.filter(v => ['bad', 'hot', 'warn'].includes(v.st));
   let urgentSum = 0;
   for (const v of urgent) {
