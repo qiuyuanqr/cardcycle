@@ -40,7 +40,9 @@ Page({
     const un = all.filter(t => !t.repaid).reduce((s, t) => s + t.amount, 0);
     this.setData({
       rows,
-      stat: rows.length ? { n: rows.length, tot: Core.money(tot), un: Core.money(un) } : null
+      stat: rows.length
+        ? { n: rows.length, tot: Core.money(tot), paid: Core.money(tot - un), un: Core.money(un) }
+        : null
     });
   },
 

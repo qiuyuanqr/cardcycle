@@ -20,8 +20,7 @@ function load() {
   if (!d) {
     const S = clone(DEF);
     S.people = [{ id: uid(), name: '我' }];
-    S.terminals = ['商户 A', '商户 B', '商户 C', '商户 D']
-      .map(n => ({ id: uid(), name: n, note: '' }));
+    S.terminals = [{ id: uid(), name: '老张便利店', note: '' }];
     save(S);
     return S;
   }
@@ -139,8 +138,70 @@ function swipeWarning(S, cardId) {
   return null;
 }
 
+/* 单卡明细页：卡片状态 + 汇总 + 该卡全部流水 */
+function cardTxData(S, cardId) {
+  const c = cardById(S, cardId);
+  if (!c) return null;
+  const all = S.txns.filter(t => t.cardId === cardId);
+  const rows = all.slice()
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
+    .map(t => {
+      const tm = termById(S, t.terminalId);
+      return {
+        id: t.id, date: t.date, amt: Core.money(t.amount), repaid: t.repaid,
+        sub: [tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ')
+      };
+    });
+  const tot = all.reduce((s, t) => s + t.amount, 0);
+  const un = all.filter(t => !t.repaid).reduce((s, t) => s + t.amount, 0);
+  return {
+    v: cardView(S, c),
+    rows,
+    stat: all.length
+      ? { n: all.length, tot: Core.money(tot), paid: Core.money(tot - un), un: Core.money(un) }
+      : null
+  };
+}
+
+/* 登记还款弹窗：输入金额（默认全额），按时间先后核销，共用 core 的拆分逻辑。
+   done(res) 在数据保存后回调，供页面刷新。 */
+function promptRepay(S, cardId, done) {
+  const c = cardById(S, cardId);
+  if (!c) return;
+  const k = Core.calc(c, S.txns, S.settings);
+  const owed = k.cur + k.over;
+  if (owed <= 0) { wx.showToast({ title: '这张卡没有待还', icon: 'none' }); return; }
+  wx.showModal({
+    title: '登记还款',
+    content: cardLabel(c) + ' 待还 ¥' + Core.money(owed)
+           + '。输入这次还的金额，不填按全额算。少于全额时按时间先后核销，逐笔操作可在明细里点「标已还」。',
+    editable: true,
+    placeholderText: '还款金额，默认 ' + Core.money(owed),
+    confirmText: '登记',
+    success: r => {
+      if (!r.confirm) return;
+      const raw = (r.content || '').trim();
+      const amt = raw ? parseFloat(raw) : owed;
+      if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return; }
+      const res = Core.applyRepayment(S.txns, cardId, amt, Core.fd(Core.today()), uid);
+      S.txns = res.txns;
+      save(S);
+      if (res.leftover > 0)
+        wx.showModal({ title: '已核销 ¥' + Core.money(res.applied), showCancel: false,
+          content: '待还只有这么多，多出的 ¥' + Core.money(res.leftover) + ' 没有记录。' });
+      else if (res.split)
+        wx.showModal({ title: '已登记还款 ¥' + Core.money(res.applied), showCancel: false,
+          content: '核销 ' + res.closed + ' 笔，其中一笔钱不够整笔，拆成了「已还＋未还」两条，可在明细里查看。' });
+      else
+        wx.showToast({ title: '已登记还款', icon: 'success' });
+      if (done) done(res);
+    }
+  });
+}
+
 module.exports = {
   Core, KEY, DEF, load, save, uid, ensureMe,
   cardById, termById, cardLabel, termLast, termLastFor,
-  cardView, dashData, swipeOptions, swipeWarning
+  cardView, dashData, swipeOptions, swipeWarning,
+  cardTxData, promptRepay
 };

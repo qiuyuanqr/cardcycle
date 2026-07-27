@@ -1,0 +1,43 @@
+<view class="wrap" wx:if="{{v}}">
+
+  <view class="card cc s-{{v.st}}">
+    <view class="cc-top">
+      <view class="grow">
+        <view class="cc-name">{{v.label}}</view>
+        <view class="cc-meta">{{v.meta}}</view>
+      </view>
+      <view class="pill p-{{v.st}}">{{v.pill}}</view>
+    </view>
+    <view wx:if="{{!v.idle}}" class="cc-body">
+      <view class="amt">¥{{v.amt}}<text class="amt-unit">待还</text></view>
+      <view class="cd">{{v.cdText}} <text class="cd-n n-{{v.st}}">{{v.cdNum}}</text> 天</view>
+    </view>
+    <view class="note">{{v.idle ? v.idleLine : v.hint}}</view>
+    <view class="acts">
+      <view wx:if="{{v.hasAmt}}" class="btn sm" bindtap="repay">登记还款</view>
+      <view class="btn sm ghost" bindtap="goSwipe">记消费</view>
+    </view>
+  </view>
+
+  <view wx:if="{{stat}}" class="card">
+    <view class="kv"><text class="k">记录笔数</text><text class="v">{{stat.n}} 笔</text></view>
+    <view class="kv"><text class="k">消费总额</text><text class="v">¥{{stat.tot}}</text></view>
+    <view class="kv"><text class="k">已还款</text><text class="v c-ok">¥{{stat.paid}}</text></view>
+    <view class="kv"><text class="k">还差</text><text class="v c-hot">¥{{stat.un}}</text></view>
+  </view>
+
+  <view wx:if="{{!rows.length}}" class="card"><view class="empty">这张卡还没有消费记录。</view></view>
+
+  <view wx:if="{{rows.length}}" class="card">
+    <view wx:for="{{rows}}" wx:key="id" class="tx">
+      <view class="tx-l">
+        <view class="tx-t">{{item.date}}　¥{{item.amt}}</view>
+        <view class="tx-s">{{item.sub}}</view>
+      </view>
+      <text class="tag {{item.repaid ? 'paid' : ''}}">{{item.repaid ? '已还' : '未还'}}</text>
+      <view class="btn sm ghost" bindtap="toggle" data-id="{{item.id}}">{{item.repaid ? '撤销' : '标已还'}}</view>
+      <view class="btn sm danger" bindtap="del" data-id="{{item.id}}">删</view>
+    </view>
+  </view>
+
+</view>

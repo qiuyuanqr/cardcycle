@@ -107,7 +107,83 @@ test('calc：交易归属与状态分级', () => {
   assert.strictEqual(k.st, 'bad');
 });
 
+/* ---------- 还款核销 ---------- */
+test('applyRepayment：全额核销、FIFO 顺序、他卡不受影响、纯函数', () => {
+  const txns = [
+    { id: 'b', cardId: 'c1', date: '2026-07-03', amount: 200, repaid: false, repaidDate: null, terminalId: 't1', note: '早餐' },
+    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: false, repaidDate: null },
+    { id: 'x', cardId: 'c2', date: '2026-07-02', amount: 50,  repaid: false, repaidDate: null },
+    { id: 'd', cardId: 'c1', date: '2026-06-20', amount: 300, repaid: true,  repaidDate: '2026-06-25' }
+  ];
+  const r = C.applyRepayment(txns, 'c1', 300, '2026-07-27', () => 'n1');
+  assert.strictEqual(r.applied, 300);
+  assert.strictEqual(r.closed, 2);
+  assert.strictEqual(r.split, 0);
+  assert.strictEqual(r.leftover, 0);
+  assert.ok(r.txns.filter(t => t.cardId === 'c1').every(t => t.repaid), 'c1 全已还');
+  assert.strictEqual(r.txns.find(t => t.id === 'a').repaidDate, '2026-07-27');
+  assert.strictEqual(r.txns.find(t => t.id === 'x').repaid, false, '他卡不动');
+  assert.strictEqual(txns.find(t => t.id === 'a').repaid, false, '不改传入数组');
+});
+
+test('applyRepayment：部分还款拆分、金额守恒、周期归属不变', () => {
+  const txns = [
+    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: false, repaidDate: null },
+    { id: 'b', cardId: 'c1', date: '2026-07-03', amount: 200, repaid: false, repaidDate: null, terminalId: 't1', note: '备注' }
+  ];
+  const r = C.applyRepayment(txns, 'c1', 150, '2026-07-27', () => 'n1');
+  assert.strictEqual(r.applied, 150);
+  assert.strictEqual(r.closed, 2);          // a 整笔 + b 的已还部分
+  assert.strictEqual(r.split, 1);
+  assert.strictEqual(r.txns.length, 3);
+  const b = r.txns.find(t => t.id === 'b'), n = r.txns.find(t => t.id === 'n1');
+  assert.strictEqual(b.amount, 50);  assert.strictEqual(b.repaid, true);
+  assert.strictEqual(n.amount, 150); assert.strictEqual(n.repaid, false);
+  assert.strictEqual(n.date, '2026-07-03', '拆出的剩余保持原日期');
+  assert.strictEqual(n.terminalId, 't1');   assert.strictEqual(n.note, '备注');
+  const sum = arr => arr.reduce((s, t) => s + t.amount, 0);
+  assert.strictEqual(sum(r.txns), sum(txns), '总金额守恒');
+  // 核销后未还合计 = 原未还 − 已还金额
+  const card = { id: 'c1', statementDay: 5, buffer: 3 };
+  const ref = C.pd('2026-07-27');
+  const before = C.calc(card, txns, SETTINGS, ref);
+  const after  = C.calc(card, r.txns, SETTINGS, ref);
+  assert.strictEqual(Math.round((before.cur + before.over - after.cur - after.over) * 100), 15000);
+});
+
+test('applyRepayment：溢出只到未还总额、浮点金额、同日按 id 排序', () => {
+  const txns = [
+    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 0.1, repaid: false, repaidDate: null },
+    { id: 'b', cardId: 'c1', date: '2026-07-01', amount: 0.2, repaid: false, repaidDate: null }
+  ];
+  let r = C.applyRepayment(txns, 'c1', 0.3, '2026-07-27', () => 'n1');
+  assert.strictEqual(r.split, 0, '0.1+0.2 整除 0.3，不拆分');
+  assert.strictEqual(r.closed, 2);
+  r = C.applyRepayment(txns, 'c1', 1000, '2026-07-27', () => 'n1');
+  assert.strictEqual(r.applied, 0.3);
+  assert.strictEqual(r.leftover, 999.7);
+  r = C.applyRepayment(txns, 'c1', 0.1, '2026-07-27', () => 'n1');
+  assert.strictEqual(r.txns.find(t => t.id === 'a').repaid, true, '同日先核销 id 小的');
+  assert.strictEqual(r.txns.find(t => t.id === 'b').repaid, false);
+});
+
 /* ---------- ICS ---------- */
+test('buildReminders：数量、日期与 buildICS 同源', () => {
+  const cards = [{ id: 'k0', bank: '广发银行', last4: '****', statementDay: 10, buffer: 3 }];
+  const now = C.pd('2026-07-27');
+  const rem = C.buildReminders(cards, [], SETTINGS, { now, months: 6 });
+  assert.strictEqual(rem.length, 12, '每月 还款+可刷卡 两条');
+  assert.strictEqual(rem[0].kind, 'due');
+  assert.strictEqual(rem[0].date, '2026-08-07');   // 账单日 8/10 − 3
+  assert.strictEqual(rem[1].kind, 'open');
+  assert.strictEqual(rem[1].date, '2026-08-11');   // 账单日次日
+  assert.ok(rem[0].title.includes('还款') && rem[0].title.includes('广发银行'));
+  const { text, count } = C.buildICS(cards, [], SETTINGS, { now, months: 6, stamp: '20260727T000000Z' });
+  assert.strictEqual(count, rem.length);
+  const t = text.replace(/\r\n[ \t]/g, '');
+  for (const r of rem) assert.ok(t.includes('UID:' + r.uid + '@cardcycle'), r.uid);
+});
+
 test('buildICS：7 张卡逐月核对日期、提醒规则、RFC 行长', () => {
   const banks = [['广州银行',5,3,2],['广发银行',10,3,7],['民生银行',11,4,7],['光大银行',13,4,9],
                  ['交通银行',15,4,11],['中信银行',21,3,18],['建设银行',28,4,24]];

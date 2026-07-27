@@ -123,6 +123,48 @@
              pct: total > 0 ? Math.round(gone / total * 100) : 0 };
   }
 
+  /* ---------- 还款核销 ---------- */
+  /**
+   * 按金额登记还款：把 amount 沿时间先后核销该卡未还的消费。
+   * 金额不足以覆盖某笔时，把那笔拆成「已还部分 + 未还剩余」两条记录
+   * （日期等字段不变，周期归属不受影响）。分为单位计算，避免浮点误差。
+   * 纯函数：不修改传入数组。
+   * @param txns    全部交易
+   * @param cardId  还哪张卡
+   * @param amount  这次还的金额
+   * @param dateStr 还款日期 'YYYY-MM-DD'
+   * @param newId   生成拆分新记录 id 的函数
+   * @returns {txns, applied, closed, split, leftover}
+   *   applied  实际核销金额（未还总额不足时只到总额为止）
+   *   closed   标记为已还的笔数（含拆分出的已还部分）
+   *   split    是否发生了拆分（0/1）
+   *   leftover amount 中没用掉的部分
+   */
+  function applyRepayment(txns, cardId, amount, dateStr, newId) {
+    newId = newId || (() => Math.random().toString(36).slice(2, 10));
+    let left = amount > 0 ? Math.round(amount * 100) : 0;
+    const total = left;
+    const out = txns.map(t => Object.assign({}, t));
+    const open = out.filter(t => t.cardId === cardId && !t.repaid)
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1
+                    : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    let closed = 0, split = 0;
+    for (const t of open) {
+      if (left <= 0) break;
+      const amt = Math.round(t.amount * 100);
+      if (left >= amt) {
+        t.repaid = true; t.repaidDate = dateStr; left -= amt; closed++;
+      } else {
+        const rest = (amt - left) / 100;
+        t.amount = left / 100; t.repaid = true; t.repaidDate = dateStr;
+        out.splice(out.indexOf(t) + 1, 0,
+          Object.assign({}, t, { id: newId(), amount: rest, repaid: false, repaidDate: null }));
+        left = 0; closed++; split = 1;
+      }
+    }
+    return { txns: out, applied: (total - left) / 100, closed, split, leftover: left / 100 };
+  }
+
   /* ---------- 日历（ICS）生成 ---------- */
   const icsEsc = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;')
                                .replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -153,18 +195,54 @@
   }
 
   /**
-   * 生成未来 months 个月的提醒日历。
+   * 未来 months 个月的提醒事件列表（还款 + 新周期开始），纯数据。
+   * 供 buildICS 生成 .ics，也供小程序逐条写入手机系统日历。
    * @param cards    信用卡数组
    * @param people   持卡人数组（多人模式下描述里注明持卡人；单人传 [] 即可）
    * @param settings {buffer}
-   * @param opts     {months=12, now=today(), multiUser=false, stamp}  stamp 供测试固定 DTSTAMP
+   * @param opts     {months=12, now=today(), multiUser=false}
+   * @returns [{uid, kind:'due'|'open', date:'YYYY-MM-DD', title, desc}]
+   */
+  function buildReminders(cards, people, settings, opts) {
+    opts = opts || {};
+    const months = opts.months || 12;
+    const now0   = opts.now || today();
+    const personName = id => {
+      const p = (people || []).find(p => p.id === id);
+      return p ? p.name : '';
+    };
+    const cardLabel = c => c.bank + (c.last4 && c.last4 !== '****' ? ' ·' + c.last4 : '');
+
+    const out = [];
+    for (const c of cards) {
+      const nm = cardLabel(c), b = bufOf(c, settings);
+      const whoLine = opts.multiUser && personName(c.personId)
+        ? '\n持卡人：' + personName(c.personId) : '';
+      let a = nextStmt(c.statementDay, now0);
+      for (let i = 0; i < months; i++) {
+        out.push({ uid: c.id + '-due-' + icsDate(a), kind: 'due',
+          date: fd(addD(a, -b)), title: '【还款】' + nm,
+          desc: '账单日 ' + md(a) + '。请在今天之前把本周期刷的金额全部还清，账单日结算时余额为 0 才不会出账单。'
+              + '\n还款到账可能需要 1 天，别卡最后一刻。' + whoLine });
+        const op = addD(a, 1);
+        out.push({ uid: c.id + '-open-' + icsDate(op), kind: 'open',
+          date: fd(op), title: '【可刷卡】' + nm,
+          desc: '账单日 ' + md(a) + ' 已过，新周期开始。本期还款截止 '
+              + md(addD(nextStmt(c.statementDay, op), -b)) + '。' });
+        a = nextStmt(c.statementDay, addD(a, 1));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 生成未来 months 个月的提醒日历。
+   * @param opts  {months=12, now=today(), multiUser=false, stamp}  stamp 供测试固定 DTSTAMP
    * @returns {text, count}
    */
   function buildICS(cards, people, settings, opts) {
     opts = opts || {};
-    const months = opts.months || 12;
-    const now0   = opts.now || today();
-    const nowU   = new Date();
+    const nowU = new Date();
     const p2 = x => String(x).padStart(2, '0');
     const stamp = opts.stamp ||
       (nowU.getUTCFullYear() + p2(nowU.getUTCMonth() + 1) + p2(nowU.getUTCDate()) + 'T'
@@ -172,42 +250,22 @@
 
     const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//cardcycle//CN',
                'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:卡周期提醒'];
-    const ev = (u, day, sum, desc, alarms) => {
-      L.push('BEGIN:VEVENT', 'UID:' + u + '@cardcycle', 'DTSTAMP:' + stamp,
+    const rems = buildReminders(cards, people, settings, opts);
+    for (const r of rems) {
+      const day = pd(r.date);
+      L.push('BEGIN:VEVENT', 'UID:' + r.uid + '@cardcycle', 'DTSTAMP:' + stamp,
         'DTSTART;VALUE=DATE:' + icsDate(day), 'DTEND;VALUE=DATE:' + icsDate(addD(day, 1)),
-        'SUMMARY:' + icsEsc(sum), 'DESCRIPTION:' + icsEsc(desc), 'TRANSP:TRANSPARENT');
-      (alarms || []).forEach(t => L.push('BEGIN:VALARM', 'ACTION:DISPLAY',
-        'DESCRIPTION:' + icsEsc(sum), 'TRIGGER:' + t, 'END:VALARM'));
+        'SUMMARY:' + icsEsc(r.title), 'DESCRIPTION:' + icsEsc(r.desc), 'TRANSP:TRANSPARENT');
+      // 还款：3天前/1天前/当天 上午9点各响一次；可刷卡：当天 9 点一次
+      const alarms = r.kind === 'due' ? ['-P2DT15H', '-PT15H', 'PT9H'] : ['PT9H'];
+      alarms.forEach(t => L.push('BEGIN:VALARM', 'ACTION:DISPLAY',
+        'DESCRIPTION:' + icsEsc(r.title), 'TRIGGER:' + t, 'END:VALARM'));
       L.push('END:VEVENT');
-    };
-    const personName = id => {
-      const p = (people || []).find(p => p.id === id);
-      return p ? p.name : '';
-    };
-    const cardLabel = c => c.bank + (c.last4 && c.last4 !== '****' ? ' ·' + c.last4 : '');
-
-    let n = 0;
-    for (const c of cards) {
-      const nm = cardLabel(c), b = bufOf(c, settings);
-      const whoLine = opts.multiUser && personName(c.personId)
-        ? '\n持卡人：' + personName(c.personId) : '';
-      let a = nextStmt(c.statementDay, now0);
-      for (let i = 0; i < months; i++) {
-        ev(c.id + '-due-' + icsDate(a), addD(a, -b), '【还款】' + nm,
-          '账单日 ' + md(a) + '。请在今天之前把本周期刷的金额全部还清，账单日结算时余额为 0 才不会出账单。'
-          + '\n还款到账可能需要 1 天，别卡最后一刻。' + whoLine,
-          ['-P2DT15H', '-PT15H', 'PT9H']); n++;             // 3天前/1天前/当天 上午9点
-        const op = addD(a, 1);
-        ev(c.id + '-open-' + icsDate(op), op, '【可刷卡】' + nm,
-          '账单日 ' + md(a) + ' 已过，新周期开始。本期还款截止 '
-          + md(addD(nextStmt(c.statementDay, op), -b)) + '。', ['PT9H']); n++;
-        a = nextStmt(c.statementDay, addD(a, 1));
-      }
     }
     L.push('END:VCALENDAR');
-    return { text: L.map(icsFold).join('\r\n'), count: n };
+    return { text: L.map(icsFold).join('\r\n'), count: rems.length };
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, calc, buildICS, icsFold, utf8Len };
+           money, bufOf, calc, applyRepayment, buildReminders, buildICS, icsFold, utf8Len };
 }));

@@ -1,7 +1,7 @@
 <view class="wrap">
 
   <view wx:if="{{!hasCards}}" class="card">
-    <view class="empty">还没有信用卡。\n去「设置」添加，或粘贴导入网页版的备份。</view>
+    <view class="empty">还没有信用卡。\n去「设置」添加，或从剪贴板导入备份。</view>
     <view class="btn" bindtap="goSettings">去设置</view>
   </view>
 
@@ -18,7 +18,8 @@
     </view>
   </view>
 
-  <view wx:for="{{views}}" wx:key="id" class="card cc s-{{item.st}}">
+  <view wx:for="{{views}}" wx:key="id" class="card cc s-{{item.st}}"
+        bindtap="goDetail" data-id="{{item.id}}">
     <view class="cc-top">
       <view class="grow">
         <view class="cc-name">{{item.label}}</view>
@@ -30,7 +31,7 @@
     <block wx:if="{{item.idle}}">
       <view class="row" style="margin-top:18rpx">
         <view class="grow idle-line {{item.idleSoon ? 'c-hot' : 'c-dim'}}">{{item.idleLine}}</view>
-        <view class="btn sm ghost" bindtap="goSwipe" data-id="{{item.id}}">记消费</view>
+        <view class="btn sm ghost" catchtap="goSwipe" data-id="{{item.id}}">记消费</view>
       </view>
     </block>
 
@@ -43,9 +44,9 @@
       <view class="ticks"><text>{{item.tickL}}</text><text>{{item.tickR}}</text></view>
       <view class="note {{item.st === 'bad' ? 'c-bad' : ''}}">{{item.hint}}</view>
       <view class="acts">
-        <view class="btn sm" bindtap="goSwipe" data-id="{{item.id}}">记消费</view>
-        <view wx:if="{{item.hasAmt}}" class="btn sm ghost" bindtap="repay" data-id="{{item.id}}">登记还款</view>
-        <view class="btn sm ghost" bindtap="goHist">明细</view>
+        <view class="btn sm ghost" catchtap="goSwipe" data-id="{{item.id}}">记消费</view>
+        <view wx:if="{{item.hasAmt}}" class="btn sm ghost" catchtap="repay" data-id="{{item.id}}">登记还款</view>
+        <view class="btn sm ghost" catchtap="goDetail" data-id="{{item.id}}">明细</view>
       </view>
     </block>
   </view>

@@ -310,7 +310,7 @@ function cardHTML(c,k){
     +'<div class="track"><div class="fill" style="width:'+k.pct+'%"></div></div>'
     +'<div class="ticks"><span>'+md(k.winStart)+' 起可刷</span><span>'+md(k.due)+' 前还清</span></div>'
     +'<div class="note'+(k.st==='bad'?' alert':'')+'">'+esc(k.hint)+'</div>'
-    +'<div class="acts"><button class="btn sm" onclick="openSwipe(\''+c.id+'\')">记消费</button>'
+    +'<div class="acts"><button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button>'
     +'<button class="btn sm ghost" onclick="openRepay(\''+c.id+'\')">登记还款</button>'
     +'<button class="btn sm ghost" onclick="go(\'hist\',\''+c.id+'\')">明细</button></div></div>';
 }
@@ -331,6 +331,7 @@ function renderHist(){
   const tot=rows.reduce((s,t)=>s+t.amount,0), un=rows.filter(t=>!t.repaid).reduce((s,t)=>s+t.amount,0);
   h+='<div class="card"><div class="kv"><span>记录笔数</span><b>'+rows.length+' 笔</b></div>'
     +'<div class="kv"><span>累计刷卡</span><b>¥'+money(tot)+'</b></div>'
+    +'<div class="kv"><span>已还款</span><b style="color:var(--ok)">¥'+money(tot-un)+'</b></div>'
     +'<div class="kv"><span>其中未还</span><b style="color:var(--hot)">¥'+money(un)+'</b></div></div>';
   h+='<div class="card">'+rows.map(t=>{
     const c=cardById(t.cardId),tm=termById(t.terminalId);
@@ -425,7 +426,7 @@ function renderSet(){
         +'<div class="tx-s">'+S.txns.filter(x=>x.terminalId===t.id).length+' 笔记录</div></div>'
         +'<button class="btn sm danger" onclick="delTerm(\''+t.id+'\')">删</button></div>'
       ).join(''):'<div class="empty" style="padding:14px">还没有常用商户</div>')
-    +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="商户名，如 老王便利店">'
+    +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="商户名，如 楼下超市">'
     +'<button class="btn" onclick="addTerm()">加</button></div></div>';
 
   // 参数紧跟信用卡；提醒与数据备份沉底
@@ -622,20 +623,28 @@ function saveSwipe(){
 /* ---- 还款 ---- */
 function openRepay(cid){
   const c=cardById(cid),k=calc(c);
+  const owed=k.cur+k.over;
   const rows=S.txns.filter(t=>t.cardId===cid&&!t.repaid).sort((a,b)=>a.date.localeCompare(b.date));
-  showModal('<h3>登记还款</h3><div class="hint">'+esc(cardLabel(c))+' · 待还 ¥'+money(k.cur+k.over)+'</div>'
-    +'<div style="margin-top:12px">'+rows.map(t=>{const tm=termById(t.terminalId);
-      return '<div class="tx"><div class="tx-l"><div class="tx-t">'+t.date+' &nbsp;¥'+money(t.amount)+'</div>'
-        +'<div class="tx-s">'+esc(tm?tm.name:'未记商户')+'</div></div>'
-        +'<button class="btn sm ghost" onclick="toggleTx(\''+t.id+'\');openRepay(\''+cid+'\')">已还</button></div>';
-      }).join('')+'</div>'
+  showModal('<h3>登记还款</h3><div class="hint">'+esc(cardLabel(c))+' · 待还 ¥'+money(owed)+'</div>'
+    +'<label>这次还了多少</label>'
+    +'<input id="rAmt" type="number" step="0.01" inputmode="decimal" value="'+(Math.round(owed*100)/100)+'">'
+    +'<div class="hint">默认全额。少于全额时按时间先后核销，钱不够整笔的那一笔会拆成「已还＋未还」两条。</div>'
     +'<div class="macts"><button class="btn ghost" onclick="closeModal()">关闭</button>'
-    +'<button class="btn" onclick="repayAll(\''+cid+'\')">全部标记已还</button></div>');
+    +'<button class="btn" onclick="doRepay(\''+cid+'\')">登记还款</button></div>'
+    +(rows.length?'<div class="sec" style="margin:18px 0 2px">逐笔勾选</div>'
+      +'<div>'+rows.map(t=>{const tm=termById(t.terminalId);
+        return '<div class="tx"><div class="tx-l"><div class="tx-t">'+t.date+' &nbsp;¥'+money(t.amount)+'</div>'
+          +'<div class="tx-s">'+esc(tm?tm.name:'未记商户')+'</div></div>'
+          +'<button class="btn sm ghost" onclick="toggleTx(\''+t.id+'\');openRepay(\''+cid+'\')">已还</button></div>';
+        }).join('')+'</div>':''));
 }
-function repayAll(cid){
-  const d=fd(today());
-  S.txns.filter(t=>t.cardId===cid&&!t.repaid).forEach(t=>{t.repaid=true;t.repaidDate=d;});
-  save();closeModal();renderAll();
+function doRepay(cid){
+  const v=+document.getElementById('rAmt').value;
+  if(!(v>0)){alert('请填写还款金额');return;}
+  const r=CardCycleCore.applyRepayment(S.txns,cid,v,fd(today()),uid);
+  S.txns=r.txns;save();closeModal();renderAll();
+  if(r.leftover>0) alert('已核销 ¥'+money(r.applied)+'（待还只有这么多）。多出的 ¥'+money(r.leftover)+' 没有记录。');
+  else if(r.split) alert('已登记还款 ¥'+money(r.applied)+'：核销 '+r.closed+' 笔，其中一笔拆成「已还＋未还」两条，可在流水里查看。');
 }
 
 /* =====================================================================
@@ -768,10 +777,10 @@ function renderAll(){
   renderDash();renderHist();renderPos();renderSet();
 }
 
-// 首次打开：一个隐形持卡人 + 四个占位商户（可改可删）
+// 首次打开：一个隐形持卡人 + 一个示例商户（可改可删）
 if(!localStorage.getItem(KEY)){
   S.people=[{id:uid(),name:'我'}];
-  S.terminals=['商户 A','商户 B','商户 C','商户 D'].map(n=>({id:uid(),name:n,note:''}));
+  S.terminals=[{id:uid(),name:'老张便利店',note:''}];
   save();
 }
 // 老数据迁移：已经有多个持卡人的，自动切到多人模式

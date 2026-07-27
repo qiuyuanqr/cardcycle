@@ -8,6 +8,7 @@
   <view wx:if="{{stat}}" class="card">
     <view class="kv"><text class="k">记录笔数</text><text class="v">{{stat.n}} 笔</text></view>
     <view class="kv"><text class="k">累计刷卡</text><text class="v">¥{{stat.tot}}</text></view>
+    <view class="kv"><text class="k">已还款</text><text class="v c-ok">¥{{stat.paid}}</text></view>
     <view class="kv"><text class="k">其中未还</text><text class="v c-hot">¥{{stat.un}}</text></view>
   </view>
 

@@ -1,0 +1,3 @@
+/* 复用概览页的状态卡样式与流水页的汇总行样式 */
+@import "../dash/dash.wxss";
+@import "../hist/hist.wxss";

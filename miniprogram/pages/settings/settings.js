@@ -69,23 +69,103 @@ Page({
     store.save(S);
   },
 
-  /* ---- 日历导出 ---- */
+  /* ---- 提醒：写入手机系统日历 ---- */
+  addToCalendar() {
+    const S = this.S;
+    if (!S.cards.length) { wx.showToast({ title: '还没有信用卡', icon: 'none' }); return; }
+    if (!wx.addPhoneCalendar) {
+      wx.showModal({ title: '微信版本过旧', showCancel: false,
+        content: '当前微信不支持写入日历，请更新微信后再试，或改用「导出 .ics 文件」。' });
+      return;
+    }
+    // 先要日历权限（首次弹系统授权框；之前拒绝过则引导去设置页打开）
+    wx.authorize({
+      scope: 'scope.addPhoneCalendar',
+      success: () => this.confirmCalendar(),
+      fail: () => {
+        wx.showModal({
+          title: '需要日历权限',
+          content: '写入提醒需要允许小程序「添加到日历」。去开启？',
+          confirmText: '去开启',
+          success: r => {
+            if (!r.confirm) return;
+            wx.openSetting({
+              success: s => {
+                if (s.authSetting['scope.addPhoneCalendar']) this.confirmCalendar();
+              }
+            });
+          }
+        });
+      }
+    });
+  },
+  confirmCalendar() {
+    const S = this.S;
+    const rem = Core.buildReminders(S.cards, S.people, S.settings, { months: 6 });
+    wx.showModal({
+      title: '写入手机日历',
+      content: '将为 ' + S.cards.length + ' 张卡写入未来 6 个月共 ' + rem.length
+             + ' 条提醒（该还款、新周期可刷，各在当天上午 9 点提醒）。确定写入？',
+      confirmText: '写入',
+      success: r => { if (r.confirm) this.writeCalendar(rem); }
+    });
+  },
+  writeCalendar(rem) {
+    let i = 0, fail = 0;
+    wx.showLoading({ title: '写入中 0/' + rem.length, mask: true });
+    const next = () => {
+      if (i >= rem.length) {
+        wx.hideLoading();
+        if (fail >= rem.length) {
+          wx.showModal({ title: '没能写入日历', showCancel: false,
+            content: '一条都没写进去，可能是日历权限没开。请到手机系统设置里允许微信访问日历后重试，或改用「导出 .ics 文件」。' });
+        } else {
+          wx.showModal({ title: '已写入 ' + (rem.length - fail) + ' 条提醒', showCancel: false,
+            content: (fail ? '有 ' + fail + ' 条失败。' : '')
+                   + '之后由手机日历按时提醒，不用打开小程序。半年后再来点一次即可续上。'
+                   + '重新写入前，建议先在日历里删掉旧的「卡周期」提醒，避免重复。' });
+        }
+        return;
+      }
+      const r = rem[i];
+      const d = Core.pd(r.date);
+      const start = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9).getTime() / 1000);
+      wx.addPhoneCalendar({
+        title: r.title,
+        startTime: start,
+        endTime: start + 3600,
+        description: r.desc,
+        alarm: true,
+        fail: () => { fail++; },
+        complete: () => {
+          i++;
+          if (i % 10 === 0) wx.showLoading({ title: '写入中 ' + i + '/' + rem.length, mask: true });
+          next();
+        }
+      });
+    };
+    next();
+  },
+
+  /* ---- 提醒：导出 .ics 文件 ---- */
   exportICS() {
     const S = this.S;
     if (!S.cards.length) { wx.showToast({ title: '还没有信用卡', icon: 'none' }); return; }
     const r = Core.buildICS(S.cards, S.people, S.settings, { months: 12 });
     const path = wx.env.USER_DATA_PATH + '/cardcycle.ics';
-    const fs = wx.getFileSystemManager();
-    fs.writeFile({
-      filePath: path, data: r.text, encoding: 'utf8',
-      success: () => {
-        wx.shareFileMessage({
-          filePath: path, fileName: '卡周期提醒.ics',
-          success: () => wx.showToast({ title: '已生成 ' + r.count + ' 条', icon: 'success' }),
-          fail: () => wx.showToast({ title: '未发送', icon: 'none' })
-        });
-      },
-      fail: () => wx.showToast({ title: '生成失败', icon: 'error' })
+    // 同步写文件：shareFileMessage 必须留在点击事件的调用链里，
+    // 放进异步回调会因“非用户触发”而失败（表现为一直「未发送」）。
+    try { wx.getFileSystemManager().writeFileSync(path, r.text, 'utf8'); }
+    catch (e) { wx.showToast({ title: '生成失败', icon: 'error' }); return; }
+    wx.shareFileMessage({
+      filePath: path, fileName: '卡周期提醒.ics',
+      success: () => wx.showToast({ title: '已发送 ' + r.count + ' 条提醒', icon: 'success' }),
+      fail: err => {
+        if (err && /cancel/.test(err.errMsg || '')) return;   // 用户自己取消不算错
+        wx.showModal({ title: '没有发出去', showCancel: false,
+          content: '文件已生成但没能转发（' + ((err && err.errMsg) || '未知原因')
+                 + '）。可以再试一次，或直接用「写入手机日历」。' });
+      }
     });
   },
 

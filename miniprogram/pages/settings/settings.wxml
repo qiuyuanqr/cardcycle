@@ -32,7 +32,7 @@
       <view class="btn sm danger" bindtap="delTerm" data-id="{{item.id}}">删</view>
     </view>
     <view class="row" style="margin-top:22rpx">
-      <input class="ipt grow" placeholder="商户名，如 老王便利店"
+      <input class="ipt grow" placeholder="商户名，如 楼下超市"
              value="{{newTerm}}" bindinput="onNewTerm" />
       <view class="btn sm" bindtap="addTerm">加</view>
     </view>
@@ -42,18 +42,23 @@
   <view class="sec">提醒</view>
   <view class="card">
     <view class="tip" style="margin-top:0">
-      生成未来 12 个月的日历文件并转发到微信聊天（发给自己或文件传输助手），
-      在 iPhone 上点开文件即可加入系统日历，由日历按时提醒。
-      每张卡每月两条提醒：新周期开始、还款截止（提前 3 天起共提醒三次）。
+      把未来 6 个月的提醒写进手机系统日历（首次需要授权），
+      到点由手机日历提醒，不用打开小程序。
+      每张卡每月两条：该还款了、新周期可刷。
     </view>
-    <view class="btn" style="margin-top:22rpx" bindtap="exportICS">导出日历提醒（.ics）</view>
+    <view class="btn" style="margin-top:22rpx" bindtap="addToCalendar">写入手机日历</view>
+    <view class="btn ghost" style="margin-top:18rpx" bindtap="exportICS">导出 .ics 日历文件</view>
+    <view class="tip">
+      .ics 文件适合导入电脑或其他设备的日历：生成后转发到微信聊天，在对应设备上点开导入。
+      重复写入会产生重复提醒，重新写入前建议先删掉日历里旧的「卡周期」提醒。
+    </view>
   </view>
 
   <view class="sec">数据备份</view>
   <view class="card">
     <view class="tip" style="margin-top:0">
       数据只存在这台手机的微信里，删除小程序会清空数据，请定期备份。
-      备份与网页版格式一致，可互相导入。
+      换手机时，在新手机上用「从剪贴板导入」粘贴回来即可恢复。
     </view>
     <view class="row" style="margin-top:22rpx">
       <view class="btn ghost grow" bindtap="exportJSON">复制备份</view>

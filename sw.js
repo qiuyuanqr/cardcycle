@@ -3,7 +3,7 @@
    策略：页面走「网络优先、失败回退缓存」，保证联网时总是最新版；
         图标等静态资源走「缓存优先」。 */
 
-const CACHE = 'cardcycle-v2';
+const CACHE = 'cardcycle-v3';
 const SHELL = ['./', './index.html', './core.js', './manifest.webmanifest',
                './icon-180.png', './icon-192.png', './icon-512.png'];
 

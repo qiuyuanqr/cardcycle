@@ -5,7 +5,8 @@
     "pages/pos/pos",
     "pages/settings/settings",
     "pages/swipe/swipe",
-    "pages/card/card"
+    "pages/card/card",
+    "pages/cardtx/cardtx"
   ],
   "window": {
     "navigationBarTitleText": "卡周期",
