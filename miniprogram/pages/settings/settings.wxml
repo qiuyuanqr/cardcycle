@@ -28,6 +28,7 @@
              value="{{newTerm}}" bindinput="onNewTerm" />
       <view class="btn sm" bindtap="addTerm">加</view>
     </view>
+    <view wx:if="{{terms.length}}" class="btn ghost" style="margin-top:18rpx" bindtap="goPos">使用情况与轮换间隔</view>
   </view>
 
   <view class="sec">提醒</view>

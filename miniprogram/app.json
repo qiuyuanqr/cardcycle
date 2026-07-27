@@ -22,7 +22,6 @@
     "list": [
       { "pagePath": "pages/dash/dash", "text": "概览" },
       { "pagePath": "pages/hist/hist", "text": "流水" },
-      { "pagePath": "pages/pos/pos", "text": "机器" },
       { "pagePath": "pages/settings/settings", "text": "设置" }
     ]
   },

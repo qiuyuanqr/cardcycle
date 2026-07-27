@@ -30,6 +30,7 @@ Page({
 
   /* ---- 卡 ---- */
   addCard() { wx.navigateTo({ url: '/pages/card/card' }); },
+  goPos() { wx.navigateTo({ url: '/pages/pos/pos' }); },
   editCard(e) { wx.navigateTo({ url: '/pages/card/card?id=' + e.currentTarget.dataset.id }); },
 
   /* ---- 机器 ---- */
