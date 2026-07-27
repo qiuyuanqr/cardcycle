@@ -68,14 +68,18 @@
 
   /**
    * 一张卡在 ref 这天所处的周期状态。
+   * 消费与还款是两本独立流水，还款不对应具体某笔消费：
+   * 把该卡还款总额从最早一笔消费开始冲抵（银行也是先冲最早的账），
+   * 没冲掉的余下部分再按消费日期归入各周期。
    * @param card     {statementDay, buffer?, id}
-   * @param txns     全部交易 [{cardId, date:'YYYY-MM-DD', amount, repaid}]
+   * @param txns     全部消费 [{id, cardId, date:'YYYY-MM-DD', amount}]
+   * @param payments 全部还款 [{id, cardId, date:'YYYY-MM-DD', amount}]
    * @param settings {buffer}
    * @param ref      参考日（默认今天）
    * @returns {anchor,prevA,winStart,due,cur,curN,over,overN,toDue,toAnchor,st,label,hint,pct}
    *   st: bad | hot | warn | ok | idle
    */
-  function calc(card, txns, settings, ref) {
+  function calc(card, txns, payments, settings, ref) {
     ref = ref || today();
     const anchor   = nextStmt(card.statementDay, ref);   // 本周期结算的账单日
     const prevA    = prevStmt(card.statementDay, ref);   // 上一个账单日
@@ -83,13 +87,23 @@
     const due      = addD(anchor, -bufOf(card, settings));
     const aKey     = fd(anchor);
 
+    const charges = txns.filter(t => t.cardId === card.id)
+      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1
+                    : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+    let credit = 0;                                      // 分为单位，避免浮点
+    for (const p of (payments || []))
+      if (p.cardId === card.id) credit += Math.round(p.amount * 100);
+
     let cur = 0, curN = 0, over = 0, overN = 0;
-    for (const t of txns) {
-      if (t.cardId !== card.id || t.repaid) continue;
+    for (const t of charges) {
+      let amt = Math.round(t.amount * 100);
+      if (credit >= amt) { credit -= amt; continue; }    // 这笔已被还款冲抵
+      amt -= credit; credit = 0;
       const k = fd(nextStmt(card.statementDay, pd(t.date)));
-      if (k === aKey) { cur += t.amount; curN++; }
-      else if (k < aKey) { over += t.amount; overN++; }
+      if (k === aKey) { cur += amt; curN++; }
+      else if (k < aKey) { over += amt; overN++; }
     }
+    cur /= 100; over /= 100;
 
     const toDue    = diffD(ref, due);
     const toAnchor = diffD(ref, anchor);
@@ -123,46 +137,24 @@
              pct: total > 0 ? Math.round(gone / total * 100) : 0 };
   }
 
-  /* ---------- 还款核销 ---------- */
+  /* ---------- 旧数据迁移 ---------- */
   /**
-   * 按金额登记还款：把 amount 沿时间先后核销该卡未还的消费。
-   * 金额不足以覆盖某笔时，把那笔拆成「已还部分 + 未还剩余」两条记录
-   * （日期等字段不变，周期归属不受影响）。分为单位计算，避免浮点误差。
-   * 纯函数：不修改传入数组。
-   * @param txns    全部交易
-   * @param cardId  还哪张卡
-   * @param amount  这次还的金额
-   * @param dateStr 还款日期 'YYYY-MM-DD'
-   * @param newId   生成拆分新记录 id 的函数
-   * @returns {txns, applied, closed, split, leftover}
-   *   applied  实际核销金额（未还总额不足时只到总额为止）
-   *   closed   标记为已还的笔数（含拆分出的已还部分）
-   *   split    是否发生了拆分（0/1）
-   *   leftover amount 中没用掉的部分
+   * 2.2 以前的数据是逐笔标记 repaid，迁移成「消费 + 还款」两本流水：
+   * 每笔已还消费折算成一条等额还款记录（日期取 repaidDate，缺省用消费日），
+   * 并清掉消费上的标记。金额守恒。纯函数：不修改传入数组。
+   * @returns {txns, payments}
    */
-  function applyRepayment(txns, cardId, amount, dateStr, newId) {
+  function migrateRepaid(txns, newId) {
     newId = newId || (() => Math.random().toString(36).slice(2, 10));
-    let left = amount > 0 ? Math.round(amount * 100) : 0;
-    const total = left;
-    const out = txns.map(t => Object.assign({}, t));
-    const open = out.filter(t => t.cardId === cardId && !t.repaid)
-      .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1
-                    : a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
-    let closed = 0, split = 0;
-    for (const t of open) {
-      if (left <= 0) break;
-      const amt = Math.round(t.amount * 100);
-      if (left >= amt) {
-        t.repaid = true; t.repaidDate = dateStr; left -= amt; closed++;
-      } else {
-        const rest = (amt - left) / 100;
-        t.amount = left / 100; t.repaid = true; t.repaidDate = dateStr;
-        out.splice(out.indexOf(t) + 1, 0,
-          Object.assign({}, t, { id: newId(), amount: rest, repaid: false, repaidDate: null }));
-        left = 0; closed++; split = 1;
-      }
-    }
-    return { txns: out, applied: (total - left) / 100, closed, split, leftover: left / 100 };
+    const payments = [];
+    const out = (txns || []).map(t => {
+      const c = Object.assign({}, t);
+      if (c.repaid) payments.push({ id: newId(), cardId: c.cardId,
+        date: c.repaidDate || c.date, amount: c.amount });
+      delete c.repaid; delete c.repaidDate;
+      return c;
+    });
+    return { txns: out, payments };
   }
 
   /* ---------- 日历（ICS）生成 ---------- */
@@ -267,5 +259,5 @@
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, calc, applyRepayment, buildReminders, buildICS, icsFold, utf8Len };
+           money, bufOf, calc, migrateRepaid, buildReminders, buildICS, icsFold, utf8Len };
 }));

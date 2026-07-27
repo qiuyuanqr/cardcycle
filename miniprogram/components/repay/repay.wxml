@@ -6,7 +6,7 @@
     <view class="lbl">这次还了多少</view>
     <input class="ipt" type="digit" placeholder="不填 = 全额 ¥{{owed}}"
            value="{{amount}}" bindinput="onInput" />
-    <view class="tip">少于全额时按时间先后核销，钱不够整笔的那一笔会拆成「已还＋未还」两条。逐笔操作可在明细里点「标已还」。</view>
+    <view class="tip">不用管还的是哪一笔：还款记成独立的一条流水，待还金额 = 消费总额 − 还款总额。</view>
 
     <view class="rp-acts">
       <view class="btn ghost rp-btn" catchtap="cancel">取消</view>

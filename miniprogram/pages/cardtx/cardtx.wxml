@@ -20,23 +20,23 @@
   </view>
 
   <view wx:if="{{stat}}" class="card">
-    <view class="kv"><text class="k">记录笔数</text><text class="v">{{stat.n}} 笔</text></view>
+    <view class="kv"><text class="k">消费笔数</text><text class="v">{{stat.n}} 笔</text></view>
     <view class="kv"><text class="k">消费总额</text><text class="v">¥{{stat.tot}}</text></view>
     <view class="kv"><text class="k">已还款</text><text class="v c-ok">¥{{stat.paid}}</text></view>
     <view class="kv"><text class="k">还差</text><text class="v c-hot">¥{{stat.un}}</text></view>
+    <view wx:if="{{stat.extra}}" class="kv"><text class="k">多还</text><text class="v">¥{{stat.extra}}</text></view>
   </view>
 
-  <view wx:if="{{!rows.length}}" class="card"><view class="empty">这张卡还没有消费记录。</view></view>
+  <view wx:if="{{!rows.length}}" class="card"><view class="empty">这张卡还没有记录。</view></view>
 
   <view wx:if="{{rows.length}}" class="card">
     <view wx:for="{{rows}}" wx:key="id" class="tx">
       <view class="tx-l">
         <view class="tx-t">{{item.date}}　¥{{item.amt}}</view>
-        <view class="tx-s">{{item.sub}}</view>
+        <view class="tx-s">{{item.kind === 'pay' ? '还款' : item.sub}}</view>
       </view>
-      <text class="tag {{item.repaid ? 'paid' : ''}}">{{item.repaid ? '已还' : '未还'}}</text>
-      <view class="btn sm ghost" bindtap="toggle" data-id="{{item.id}}">{{item.repaid ? '撤销' : '标已还'}}</view>
-      <view class="btn sm danger" bindtap="del" data-id="{{item.id}}">删</view>
+      <text wx:if="{{item.kind === 'pay'}}" class="tag paid">还款</text>
+      <view class="btn sm danger" bindtap="del" data-id="{{item.id}}" data-kind="{{item.kind}}">删</view>
     </view>
   </view>
 

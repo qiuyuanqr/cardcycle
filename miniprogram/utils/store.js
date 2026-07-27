@@ -7,12 +7,23 @@ const Core = require('./core.js');
 
 const KEY = 'cardcycle.v1';
 const DEF = {
-  people: [], cards: [], terminals: [], txns: [],
+  people: [], cards: [], terminals: [], txns: [], payments: [],
   settings: { buffer: 3, minGap: 7, lastBackup: null }
 };
 
 const clone = o => JSON.parse(JSON.stringify(o));
 const uid = () => Math.random().toString(36).slice(2, 10);
+
+/* 存储/备份数据 → 内部状态（含 2.2 以前逐笔 repaid 标记的旧数据迁移） */
+function normalize(d) {
+  const S = Object.assign(clone(DEF), d);
+  S.settings = Object.assign(clone(DEF.settings), d.settings || {});
+  if (!Array.isArray(d.payments)) {
+    const m = Core.migrateRepaid(S.txns, uid);
+    S.txns = m.txns; S.payments = m.payments;
+  }
+  return S;
+}
 
 function load() {
   let d = null;
@@ -24,9 +35,7 @@ function load() {
     save(S);
     return S;
   }
-  const S = Object.assign(clone(DEF), d);
-  S.settings = Object.assign(clone(DEF.settings), d.settings || {});
-  return S;
+  return normalize(d);
 }
 function save(S) {
   try { wx.setStorageSync(KEY, S); }
@@ -55,7 +64,7 @@ const RANK = { bad: 0, hot: 1, warn: 2, ok: 3, idle: 4 };
 
 /* 一张卡 → 概览页展示对象 */
 function cardView(S, c) {
-  const k = Core.calc(c, S.txns, S.settings);
+  const k = Core.calc(c, S.txns, S.payments, S.settings);
   const amt = k.cur + k.over;
   const buf = Core.bufOf(c, S.settings);
   const v = {
@@ -89,7 +98,7 @@ function dashData(S) {
   let urgentSum = 0;
   for (const v of urgent) {
     const c = cardById(S, v.id);
-    const k = Core.calc(c, S.txns, S.settings);
+    const k = Core.calc(c, S.txns, S.payments, S.settings);
     urgentSum += k.cur + k.over;
   }
   return {
@@ -104,7 +113,7 @@ function dashData(S) {
 function swipeOptions(S, selCardId) {
   const t0 = Core.today();
   const cards = S.cards.map(c => {
-    const k = Core.calc(c, S.txns, S.settings);
+    const k = Core.calc(c, S.txns, S.payments, S.settings);
     return { id: c.id, label: cardLabel(c), sub: k.label };
   });
   const terms = S.terminals.map(tm => {
@@ -124,7 +133,7 @@ function swipeOptions(S, selCardId) {
 function swipeWarning(S, cardId) {
   const c = cardById(S, cardId);
   if (!c) return null;
-  const k = Core.calc(c, S.txns, S.settings);
+  const k = Core.calc(c, S.txns, S.payments, S.settings);
   if (k.toDue <= 0) return {
     level: 'bad',
     text: '注意：本期安全窗口已过（' + (k.toAnchor === 0 ? '今天就是账单日'
@@ -138,27 +147,30 @@ function swipeWarning(S, cardId) {
   return null;
 }
 
-/* 单卡明细页：卡片状态 + 汇总 + 该卡全部流水 */
+/* 单卡明细页：卡片状态 + 汇总 + 该卡的消费与还款两本流水（混排） */
 function cardTxData(S, cardId) {
   const c = cardById(S, cardId);
   if (!c) return null;
-  const all = S.txns.filter(t => t.cardId === cardId);
-  const rows = all.slice()
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-    .map(t => {
+  const txs = S.txns.filter(t => t.cardId === cardId);
+  const pays = S.payments.filter(p => p.cardId === cardId);
+  const rows = txs.map(t => {
       const tm = termById(S, t.terminalId);
-      return {
-        id: t.id, date: t.date, amt: Core.money(t.amount), repaid: t.repaid,
-        sub: [tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ')
-      };
-    });
-  const tot = all.reduce((s, t) => s + t.amount, 0);
-  const un = all.filter(t => !t.repaid).reduce((s, t) => s + t.amount, 0);
+      return { kind: 'tx', id: t.id, date: t.date, amt: Core.money(t.amount),
+               sub: [tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ') };
+    })
+    .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date,
+                             amt: Core.money(p.amount), sub: '' })))
+    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const tot = txs.reduce((s, t) => s + t.amount, 0);
+  const paid = pays.reduce((s, p) => s + p.amount, 0);
+  const owe = Math.max(0, Math.round((tot - paid) * 100) / 100);
+  const extra = Math.max(0, Math.round((paid - tot) * 100) / 100);
   return {
     v: cardView(S, c),
     rows,
-    stat: all.length
-      ? { n: all.length, tot: Core.money(tot), paid: Core.money(tot - un), un: Core.money(un) }
+    stat: rows.length
+      ? { n: txs.length, tot: Core.money(tot), paid: Core.money(paid),
+          un: Core.money(owe), extra: extra > 0 ? Core.money(extra) : '' }
       : null
   };
 }
@@ -167,28 +179,25 @@ function cardTxData(S, cardId) {
 function repayInfo(S, cardId) {
   const c = cardById(S, cardId);
   if (!c) return null;
-  const k = Core.calc(c, S.txns, S.settings);
+  const k = Core.calc(c, S.txns, S.payments, S.settings);
   const owed = k.cur + k.over;
   if (owed <= 0) { wx.showToast({ title: '这张卡没有待还', icon: 'none' }); return null; }
   return { label: cardLabel(c), owed, owedText: Core.money(owed) };
 }
 
-/* 登记还款：执行核销并提示结果。raw 为用户输入，空串按全额算。
-   成功返回 true，供页面关弹窗并刷新。 */
+/* 登记还款：记一条独立的还款流水（多还时按待还封顶）。
+   raw 为用户输入，空串按全额算。成功返回 true，供页面关弹窗并刷新。 */
 function applyRepay(S, cardId, raw) {
   const info = repayInfo(S, cardId);
   if (!info) return false;
   const amt = (raw || '').trim() ? parseFloat(raw) : info.owed;
   if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return false; }
-  const res = Core.applyRepayment(S.txns, cardId, amt, Core.fd(Core.today()), uid);
-  S.txns = res.txns;
+  const rec = Math.min(Math.round(amt * 100), Math.round(info.owed * 100)) / 100;
+  S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec });
   save(S);
-  if (res.leftover > 0)
-    wx.showModal({ title: '已核销 ¥' + Core.money(res.applied), showCancel: false,
-      content: '待还只有这么多，多出的 ¥' + Core.money(res.leftover) + ' 没有记录。' });
-  else if (res.split)
-    wx.showModal({ title: '已登记还款 ¥' + Core.money(res.applied), showCancel: false,
-      content: '核销 ' + res.closed + ' 笔，其中一笔钱不够整笔，拆成了「已还＋未还」两条，可在明细里查看。' });
+  if (amt > info.owed)
+    wx.showModal({ title: '已按 ¥' + Core.money(rec) + ' 登记', showCancel: false,
+      content: '待还只有这么多。' });
   else
     wx.showToast({ title: '已登记还款', icon: 'success' });
   return true;

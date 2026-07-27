@@ -31,24 +31,18 @@ Page({
   },
   goSwipe() { wx.navigateTo({ url: '/pages/swipe/swipe?cardId=' + this.id }); },
 
-  toggle(e) {
-    const S = this.S;
-    const t = S.txns.find(x => x.id === e.currentTarget.dataset.id);
-    if (!t) return;
-    t.repaid = !t.repaid;
-    t.repaidDate = t.repaid ? store.Core.fd(store.Core.today()) : null;
-    store.save(S);
-    this.refresh();
-  },
-
   del(e) {
-    const id = e.currentTarget.dataset.id;
+    const { id, kind } = e.currentTarget.dataset;
     wx.showModal({
-      title: '删除', content: '删除这条刷卡记录？',
+      title: '删除',
+      content: kind === 'pay'
+        ? '删除这条还款记录？待还金额会相应增加。'
+        : '删除这条消费记录？已登记的还款不受影响，待还金额会自动重算。',
       success: r => {
         if (!r.confirm) return;
         const S = this.S;
-        S.txns = S.txns.filter(x => x.id !== id);
+        if (kind === 'pay') S.payments = S.payments.filter(x => x.id !== id);
+        else S.txns = S.txns.filter(x => x.id !== id);
         store.save(S);
         this.refresh();
       }

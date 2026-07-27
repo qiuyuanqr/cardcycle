@@ -23,25 +23,28 @@ Page({
   build(idx) {
     const S = this.S;
     const fid = this.filterIds[idx] || '';
-    const rows = S.txns
-      .filter(t => !fid || t.cardId === fid)
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
-      .map(t => {
-        const c = store.cardById(S, t.cardId);
+    const cardSub = c => c ? store.cardLabel(c) : '已删除的卡';
+    const txs = S.txns.filter(t => !fid || t.cardId === fid);
+    const pays = S.payments.filter(p => !fid || p.cardId === fid);
+    const rows = txs.map(t => {
         const tm = store.termById(S, t.terminalId);
-        return {
-          id: t.id, date: t.date, amt: Core.money(t.amount), repaid: t.repaid,
-          sub: [c ? store.cardLabel(c) : '已删除的卡',
-                tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ')
-        };
-      });
-    const all = S.txns.filter(t => !fid || t.cardId === fid);
-    const tot = all.reduce((s, t) => s + t.amount, 0);
-    const un = all.filter(t => !t.repaid).reduce((s, t) => s + t.amount, 0);
+        return { kind: 'tx', id: t.id, date: t.date, amt: Core.money(t.amount),
+                 sub: [cardSub(store.cardById(S, t.cardId)),
+                       tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ') };
+      })
+      .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date,
+                               amt: Core.money(p.amount),
+                               sub: cardSub(store.cardById(S, p.cardId)) })))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    const tot = txs.reduce((s, t) => s + t.amount, 0);
+    const paid = pays.reduce((s, p) => s + p.amount, 0);
+    const owe = Math.max(0, Math.round((tot - paid) * 100) / 100);
+    const extra = Math.max(0, Math.round((paid - tot) * 100) / 100);
     this.setData({
       rows,
       stat: rows.length
-        ? { n: rows.length, tot: Core.money(tot), paid: Core.money(tot - un), un: Core.money(un) }
+        ? { n: txs.length, tot: Core.money(tot), paid: Core.money(paid),
+            un: Core.money(owe), extra: extra > 0 ? Core.money(extra) : '' }
         : null
     });
   },
@@ -52,24 +55,18 @@ Page({
     this.build(idx);
   },
 
-  toggle(e) {
-    const S = this.S;
-    const t = S.txns.find(x => x.id === e.currentTarget.dataset.id);
-    if (!t) return;
-    t.repaid = !t.repaid;
-    t.repaidDate = t.repaid ? Core.fd(Core.today()) : null;
-    store.save(S);
-    this.build(this.data.filterIdx);
-  },
-
   del(e) {
-    const id = e.currentTarget.dataset.id;
+    const { id, kind } = e.currentTarget.dataset;
     wx.showModal({
-      title: '删除', content: '删除这条刷卡记录？',
+      title: '删除',
+      content: kind === 'pay'
+        ? '删除这条还款记录？待还金额会相应增加。'
+        : '删除这条消费记录？已登记的还款不受影响，待还金额会自动重算。',
       success: r => {
         if (!r.confirm) return;
         const S = this.S;
-        S.txns = S.txns.filter(x => x.id !== id);
+        if (kind === 'pay') S.payments = S.payments.filter(x => x.id !== id);
+        else S.txns = S.txns.filter(x => x.id !== id);
         store.save(S);
         this.build(this.data.filterIdx);
       }

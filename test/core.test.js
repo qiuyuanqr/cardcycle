@@ -70,7 +70,7 @@ test('calc：账单日 × 缓冲 × 430 天全扫描的不变量', () => {
       const card = { id: 'c', statementDay: day, buffer };
       for (let i = 0; i < 430; i++) {
         const ref = C.addD(C.pd('2026-01-01'), i);
-        const k = C.calc(card, [], SETTINGS, ref);
+        const k = C.calc(card, [], [], SETTINGS, ref);
         assert.strictEqual(C.diffD(k.due, k.anchor), buffer, 'due=anchor-buffer');
         assert.strictEqual(C.fd(k.winStart), C.fd(C.addD(k.prevA, 1)), '窗口起点');
         assert.ok(ref > k.prevA && ref <= k.anchor, 'ref 在周期内');
@@ -89,82 +89,84 @@ test('calc：账单日 × 缓冲 × 430 天全扫描的不变量', () => {
 test('calc：交易归属与状态分级', () => {
   const card = { id: 'c1', statementDay: 5, buffer: 3 };
   const ref = C.pd('2026-07-27');            // 周期 7/6–8/5，due 8/2
-  const t = (date, repaid = false) => ({ cardId: 'c1', date, amount: 100, repaid });
+  const t = date => ({ id: date, cardId: 'c1', date, amount: 100 });
+  const pay = a => [{ id: 'p1', cardId: 'c1', date: '2026-07-27', amount: a }];
 
-  let k = C.calc(card, [t('2026-07-10')], SETTINGS, ref);
+  let k = C.calc(card, [t('2026-07-10')], [], SETTINGS, ref);
   assert.strictEqual(k.cur, 100); assert.strictEqual(k.over, 0);
   assert.strictEqual(k.st, 'ok');
 
-  k = C.calc(card, [t('2026-07-01')], SETTINGS, ref);   // 跨过 7/5 账单日未还
+  k = C.calc(card, [t('2026-07-01')], [], SETTINGS, ref);   // 跨过 7/5 账单日未还
   assert.strictEqual(k.over, 100); assert.strictEqual(k.st, 'bad');
 
-  k = C.calc(card, [t('2026-07-01', true)], SETTINGS, ref);  // 已还不计
+  k = C.calc(card, [t('2026-07-01')], pay(100), SETTINGS, ref);  // 已还清不计
   assert.strictEqual(k.cur + k.over, 0); assert.strictEqual(k.st, 'idle');
 
-  k = C.calc(card, [t('2026-07-10')], SETTINGS, C.pd('2026-08-01'));  // toDue=1
+  k = C.calc(card, [t('2026-07-10')], [], SETTINGS, C.pd('2026-08-01'));  // toDue=1
   assert.strictEqual(k.st, 'hot');
-  k = C.calc(card, [t('2026-07-10')], SETTINGS, C.pd('2026-08-03'));  // 过 due 未过账单日
+  k = C.calc(card, [t('2026-07-10')], [], SETTINGS, C.pd('2026-08-03'));  // 过 due 未过账单日
   assert.strictEqual(k.st, 'bad');
 });
 
-/* ---------- 还款核销 ---------- */
-test('applyRepayment：全额核销、FIFO 顺序、他卡不受影响、纯函数', () => {
+/* ---------- 还款冲抵 ---------- */
+test('calc：还款按时间先后冲抵，不对应具体消费', () => {
+  const card = { id: 'c1', statementDay: 5, buffer: 3 };
+  const ref = C.pd('2026-07-27');            // 周期 7/6–8/5
   const txns = [
-    { id: 'b', cardId: 'c1', date: '2026-07-03', amount: 200, repaid: false, repaidDate: null, terminalId: 't1', note: '早餐' },
-    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: false, repaidDate: null },
-    { id: 'x', cardId: 'c2', date: '2026-07-02', amount: 50,  repaid: false, repaidDate: null },
-    { id: 'd', cardId: 'c1', date: '2026-06-20', amount: 300, repaid: true,  repaidDate: '2026-06-25' }
+    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100 },   // 已跨账单日
+    { id: 'b', cardId: 'c1', date: '2026-07-10', amount: 200 },   // 本期
+    { id: 'x', cardId: 'c2', date: '2026-07-02', amount: 999 }    // 他卡
   ];
-  const r = C.applyRepayment(txns, 'c1', 300, '2026-07-27', () => 'n1');
-  assert.strictEqual(r.applied, 300);
-  assert.strictEqual(r.closed, 2);
-  assert.strictEqual(r.split, 0);
-  assert.strictEqual(r.leftover, 0);
-  assert.ok(r.txns.filter(t => t.cardId === 'c1').every(t => t.repaid), 'c1 全已还');
-  assert.strictEqual(r.txns.find(t => t.id === 'a').repaidDate, '2026-07-27');
-  assert.strictEqual(r.txns.find(t => t.id === 'x').repaid, false, '他卡不动');
-  assert.strictEqual(txns.find(t => t.id === 'a').repaid, false, '不改传入数组');
+  const pay = a => [{ id: 'p1', cardId: 'c1', date: '2026-07-26', amount: a }];
+
+  let k = C.calc(card, txns, pay(100), SETTINGS, ref);   // 正好冲掉最早那笔
+  assert.strictEqual(k.over, 0); assert.strictEqual(k.cur, 200);
+  assert.strictEqual(k.st, 'ok');
+
+  k = C.calc(card, txns, pay(50), SETTINGS, ref);        // 只冲掉一半
+  assert.strictEqual(k.over, 50); assert.strictEqual(k.cur, 200);
+  assert.strictEqual(k.st, 'bad');
+
+  k = C.calc(card, txns, pay(250), SETTINGS, ref);       // 冲完最早的，再冲本期一部分
+  assert.strictEqual(k.over, 0); assert.strictEqual(k.cur, 50);
+
+  k = C.calc(card, txns, pay(9999), SETTINGS, ref);      // 多还：全部冲清
+  assert.strictEqual(k.cur + k.over, 0); assert.strictEqual(k.st, 'idle');
+
+  // 他卡的还款不影响本卡
+  k = C.calc(card, txns, [{ id: 'p2', cardId: 'c2', date: '2026-07-26', amount: 300 }], SETTINGS, ref);
+  assert.strictEqual(k.over, 100); assert.strictEqual(k.cur, 200);
+
+  // 浮点：0.1+0.2 的消费，还 0.3 应清零
+  const f = [{ id: 'x1', cardId: 'c1', date: '2026-07-10', amount: 0.1 },
+             { id: 'x2', cardId: 'c1', date: '2026-07-11', amount: 0.2 }];
+  k = C.calc(card, f, pay(0.3), SETTINGS, ref);
+  assert.strictEqual(k.cur + k.over, 0); assert.strictEqual(k.st, 'idle');
 });
 
-test('applyRepayment：部分还款拆分、金额守恒、周期归属不变', () => {
+test('migrateRepaid：已还标记折算成还款记录、金额守恒、清掉标记', () => {
   const txns = [
-    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: false, repaidDate: null },
-    { id: 'b', cardId: 'c1', date: '2026-07-03', amount: 200, repaid: false, repaidDate: null, terminalId: 't1', note: '备注' }
+    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: true,  repaidDate: '2026-07-20', terminalId: 't1' },
+    { id: 'b', cardId: 'c1', date: '2026-07-03', amount: 200, repaid: false, repaidDate: null },
+    { id: 'c', cardId: 'c2', date: '2026-07-05', amount: 50,  repaid: true,  repaidDate: null }
   ];
-  const r = C.applyRepayment(txns, 'c1', 150, '2026-07-27', () => 'n1');
-  assert.strictEqual(r.applied, 150);
-  assert.strictEqual(r.closed, 2);          // a 整笔 + b 的已还部分
-  assert.strictEqual(r.split, 1);
-  assert.strictEqual(r.txns.length, 3);
-  const b = r.txns.find(t => t.id === 'b'), n = r.txns.find(t => t.id === 'n1');
-  assert.strictEqual(b.amount, 50);  assert.strictEqual(b.repaid, true);
-  assert.strictEqual(n.amount, 150); assert.strictEqual(n.repaid, false);
-  assert.strictEqual(n.date, '2026-07-03', '拆出的剩余保持原日期');
-  assert.strictEqual(n.terminalId, 't1');   assert.strictEqual(n.note, '备注');
-  const sum = arr => arr.reduce((s, t) => s + t.amount, 0);
-  assert.strictEqual(sum(r.txns), sum(txns), '总金额守恒');
-  // 核销后未还合计 = 原未还 − 已还金额
+  let n = 0;
+  const r = C.migrateRepaid(txns, () => 'p' + (++n));
+  assert.strictEqual(r.txns.length, 3, '消费记录一条不少');
+  assert.ok(r.txns.every(t => !('repaid' in t) && !('repaidDate' in t)), '标记清掉');
+  assert.strictEqual(r.txns.find(t => t.id === 'a').terminalId, 't1', '其余字段保留');
+  assert.strictEqual(r.payments.length, 2);
+  const pa = r.payments.find(p => p.cardId === 'c1');
+  assert.strictEqual(pa.amount, 100);
+  assert.strictEqual(pa.date, '2026-07-20', '日期取 repaidDate');
+  assert.strictEqual(r.payments.find(p => p.cardId === 'c2').date, '2026-07-05', '缺 repaidDate 用消费日');
+  // 迁移前后各卡待还一致
   const card = { id: 'c1', statementDay: 5, buffer: 3 };
   const ref = C.pd('2026-07-27');
-  const before = C.calc(card, txns, SETTINGS, ref);
-  const after  = C.calc(card, r.txns, SETTINGS, ref);
-  assert.strictEqual(Math.round((before.cur + before.over - after.cur - after.over) * 100), 15000);
-});
-
-test('applyRepayment：溢出只到未还总额、浮点金额、同日按 id 排序', () => {
-  const txns = [
-    { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 0.1, repaid: false, repaidDate: null },
-    { id: 'b', cardId: 'c1', date: '2026-07-01', amount: 0.2, repaid: false, repaidDate: null }
-  ];
-  let r = C.applyRepayment(txns, 'c1', 0.3, '2026-07-27', () => 'n1');
-  assert.strictEqual(r.split, 0, '0.1+0.2 整除 0.3，不拆分');
-  assert.strictEqual(r.closed, 2);
-  r = C.applyRepayment(txns, 'c1', 1000, '2026-07-27', () => 'n1');
-  assert.strictEqual(r.applied, 0.3);
-  assert.strictEqual(r.leftover, 999.7);
-  r = C.applyRepayment(txns, 'c1', 0.1, '2026-07-27', () => 'n1');
-  assert.strictEqual(r.txns.find(t => t.id === 'a').repaid, true, '同日先核销 id 小的');
-  assert.strictEqual(r.txns.find(t => t.id === 'b').repaid, false);
+  const before = C.calc(card, txns.filter(t => !t.repaid), [], SETTINGS, ref);
+  const after  = C.calc(card, r.txns, r.payments, SETTINGS, ref);
+  assert.strictEqual(before.cur + before.over, after.cur + after.over);
+  assert.strictEqual(txns[0].repaid, true, '不改传入数组');
 });
 
 /* ---------- ICS ---------- */
