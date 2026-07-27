@@ -115,6 +115,17 @@ Page({
         content: '当前微信不支持写入日历，请更新微信后再试，或改用「导出 .ics 文件」。' });
       return;
     }
+    // 安卓微信写日历的硬限制（真机实测）：每条都要手动点一次「创建日历」确认框，
+    // 且一次点击只能发起一条，其余的没写进去也照样回调 success——几十条提醒没法批量写。
+    // 安卓引导走 .ics：一次导入全部，还款提醒还带 3天前/1天前/当天 三响。
+    const plat = (wx.getDeviceInfo ? wx.getDeviceInfo() : wx.getSystemInfoSync()).platform;
+    if (plat === 'android') {
+      wx.showModal({ title: '安卓请用 .ics 导入', showCancel: false,
+        content: '安卓微信每写一条日历都要手动确认一次，几十条提醒没法批量写入。'
+               + '请点下方「导出 .ics 日历文件」，转发给自己后用手机日历打开导入，'
+               + '一次全部导入，还款提醒还会提前 3 天、1 天各响一次。' });
+      return;
+    }
     // 先要日历权限（首次弹系统授权框；之前拒绝过则引导去设置页打开）
     wx.authorize({
       scope: 'scope.addPhoneCalendar',
