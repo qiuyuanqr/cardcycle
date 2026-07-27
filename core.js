@@ -161,6 +161,28 @@
     return { txns: out, payments };
   }
 
+  /* ---------- 概览「最近变动」排序 ---------- */
+  /**
+   * 某张卡最后一次记账时刻（毫秒）。
+   * 优先用记录上的 ts（记账动作发生的时间，精确到毫秒）；
+   * 老记录没有 ts 的，退回按流水日期当天 0 点算——同一天里新记的永远比老记录靠前。
+   * 从未有任何消费/还款流水返回 0。
+   */
+  function lastActTs(txns, payments, cardId) {
+    let m = 0;
+    for (const t of txns) if (t.cardId === cardId)
+      m = Math.max(m, t.ts || pd(t.date).getTime());
+    for (const p of payments) if (p.cardId === cardId)
+      m = Math.max(m, p.ts || pd(p.date).getTime());
+    return m;
+  }
+
+  /* 「最近变动」分档：0 有欠款 | 1 无欠款但有过流水 | 2 从未有任何流水（沉底） */
+  function recentBand(st, actTs) { return st !== 'idle' ? 0 : actTs > 0 ? 1 : 2; }
+
+  /* 「最近变动」比较器：档位升序，档内按记账时刻倒序（档 2 全为 0，稳定排序保持原顺序） */
+  function recentCmp(a, b) { return a.band - b.band || b.actTs - a.actTs; }
+
   /* ---------- 日历（ICS）生成 ---------- */
   const icsEsc = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;')
                                .replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -263,5 +285,6 @@
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, calc, migrateRepaid, buildReminders, buildICS, icsFold, utf8Len };
+           money, bufOf, calc, migrateRepaid, lastActTs, recentBand, recentCmp,
+           buildReminders, buildICS, icsFold, utf8Len };
 }));

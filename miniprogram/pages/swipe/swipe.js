@@ -59,7 +59,7 @@ Page({
       S.txns.push({
         id: store.uid(), cardId: d.selCard, terminalId: d.selTerm,
         date: d.date || d.todayStr, amount: amt,
-        note: (d.note || '').trim()
+        note: (d.note || '').trim(), ts: Date.now()
       });
       store.save(S);
       wx.showToast({ title: '已记录', icon: 'success' });

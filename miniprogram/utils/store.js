@@ -94,26 +94,19 @@ function cardView(S, c) {
   return v;
 }
 
-/* 某张卡最后一次账户变动（消费或还款）的日期，无变动返回 '' */
-function lastActOf(S, cid) {
-  let m = '';
-  for (const t of S.txns) if (t.cardId === cid && t.date > m) m = t.date;
-  for (const p of S.payments) if (p.cardId === cid && p.date > m) m = p.date;
-  return m;
-}
-
 /* 概览页整页数据 */
 function dashData(S) {
   const mode = S.settings.cardSort || 'smart';
   const views = S.cards.map(c => {
     const v = cardView(S, c);
-    v.lastAct = lastActOf(S, c.id);
+    v.actTs = Core.lastActTs(S.txns, S.payments, c.id);
+    v.band = Core.recentBand(v.st, v.actTs);
     return v;
   });
   if (mode === 'smart')
     views.sort((a, b) => a.rank - b.rank || a.toDue - b.toDue);
   else if (mode === 'recent')
-    views.sort((a, b) => b.lastAct.localeCompare(a.lastAct));   // 无变动的卡沉底（稳定排序保持原相对顺序）
+    views.sort(Core.recentCmp);   // 欠款卡在前 → 操作过的 → 从未操作沉底；档内按记账时刻倒序
   // custom：保持 S.cards 数组顺序（设置页 ↑↓ 直接调整数组）
   const urgent = views.filter(v => ['bad', 'hot', 'warn'].includes(v.st));
   let urgentSum = 0;
@@ -215,7 +208,7 @@ function applyRepay(S, cardId, raw) {
   const amt = (raw || '').trim() ? parseFloat(raw) : info.owed;
   if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return false; }
   const rec = Math.round(amt * 100) / 100;
-  S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec });
+  S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec, ts: Date.now() });
   save(S);
   if (rec > info.owed) {
     const dep = Math.round((rec - info.owed) * 100) / 100;

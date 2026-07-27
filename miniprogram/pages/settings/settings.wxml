@@ -26,7 +26,7 @@
       <view class="ipt">{{sortNames[sortIdx]}}</view>
     </picker>
     <view wx:if="{{custom}}" class="tip">在上方「信用卡」列表里用 ↑↓ 调整显示顺序。</view>
-    <view wx:else class="tip">最近变动 = 谁最后有消费或还款，谁排最上面。</view>
+    <view wx:else class="tip">最近变动 = 有欠款的卡在前，按最近一次记账排序；从没记过账的卡沉底。</view>
     <view class="lbl">记消费选卡方式</view>
     <picker range="{{styleNames}}" value="{{styleIdx}}" bindchange="onStyle">
       <view class="ipt">{{styleNames[styleIdx]}}</view>

@@ -265,13 +265,6 @@ function termLastFor(tid,cid){const d=S.txns.filter(t=>t.terminalId===tid&&t.car
    概览
    ===================================================================== */
 const RANK={bad:0,hot:1,warn:2,ok:3,idle:4};
-// 某张卡最后一次账户变动（消费或还款）的日期，无变动返回 ''
-function lastActOf(cid){
-  let m='';
-  for(const t of S.txns)if(t.cardId===cid&&t.date>m)m=t.date;
-  for(const p of S.payments)if(p.cardId===cid&&p.date>m)m=p.date;
-  return m;
-}
 function renderDash(){
   const el=document.getElementById('v-dash');
   if(!S.cards.length){
@@ -280,9 +273,12 @@ function renderDash(){
     return;
   }
   const mode=S.settings.cardSort||'smart';
-  const list=S.cards.map(c=>({c,k:calc(c),act:lastActOf(c.id)}));
+  const list=S.cards.map(c=>{
+    const k=calc(c),actTs=CardCycleCore.lastActTs(S.txns,S.payments,c.id);
+    return {c,k,actTs,band:CardCycleCore.recentBand(k.st,actTs)};
+  });
   if(mode==='smart') list.sort((a,b)=>RANK[a.k.st]-RANK[b.k.st]||a.k.toDue-b.k.toDue);
-  else if(mode==='recent') list.sort((a,b)=>b.act.localeCompare(a.act));  // 无变动的卡沉底
+  else if(mode==='recent') list.sort(CardCycleCore.recentCmp);  // 欠款卡在前 → 操作过的 → 从未操作沉底；档内按记账时刻倒序
   // custom：保持「设置」里排好的数组顺序
   let h='';
 
@@ -483,7 +479,7 @@ function renderSet(){
       .map(o=>'<option value="'+o[0]+'"'+((S.settings.cardSort||'smart')===o[0]?' selected':'')+'>'+o[1]+'</option>').join('')
     +'</select>'
     +'<div class="tip">'+(custom?'用上方「信用卡」列表里的 ↑↓ 调整显示顺序。'
-                                :'最近变动 = 谁最后有消费或还款，谁排最上面。')+'</div>'
+                                :'最近变动 = 有欠款的卡在前，按最近一次记账排序；从没记过账的卡沉底。')+'</div>'
     +'<label>记消费选卡方式</label>'
     +'<select onchange="setSwipeStyle(this.value)">'
     +[['chips','平铺按钮（默认）'],['list','下拉列表']]
@@ -685,7 +681,7 @@ function saveSwipe(){
   if(dt>fd(today()) && !confirm(dt+' 是未来的日期，确定这样记录吗？')) return;
   S.txns.push({id:uid(),cardId:swipeCard,terminalId:swipeTerm,
     date:dt,amount:a,
-    note:document.getElementById('sNote').value.trim()});
+    note:document.getElementById('sNote').value.trim(),ts:Date.now()});
   save();closeModal();go('dash');
 }
 
@@ -707,7 +703,7 @@ function doRepay(cid){
   const c=cardById(cid),k=calc(c);
   const owed=Math.round((k.cur+k.over)*100)/100;
   const amt=Math.round(v*100)/100;   // 还多少记多少，超出部分是存款
-  S.payments.push({id:uid(),cardId:cid,date:fd(today()),amount:amt});
+  S.payments.push({id:uid(),cardId:cid,date:fd(today()),amount:amt,ts:Date.now()});
   save();closeModal();renderAll();
   if(amt>owed) alert('已登记还款 ¥'+money(amt)+'，其中 ¥'+money(Math.round((amt-owed)*100)/100)
     +' 超出待还，记为存款，下次消费自动抵扣。');

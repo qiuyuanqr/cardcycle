@@ -270,3 +270,31 @@ test('buildICS：账单日31号的月末路径 与 多人模式描述', () => {
                             { now, stamp: '20260727T000000Z' }).text.replace(/\r\n[ \t]/g, '');
   assert.ok(!single.includes('持卡人'), '单人模式不出现持卡人');
 });
+
+/* ---- 「最近变动」排序 ---------------------------------------- */
+
+test('lastActTs：优先记账时刻 ts，老记录退回日期 0 点，无流水返回 0', () => {
+  const txns = [
+    { cardId: 'a', date: '2026-07-27' },                                          // 老记录无 ts
+    { cardId: 'b', date: '2026-07-27', ts: C.pd('2026-07-27').getTime() + 3600e3 },
+  ];
+  const pays = [{ cardId: 'c', date: '2026-07-25', ts: C.pd('2026-07-25').getTime() + 100 }];
+  assert.strictEqual(C.lastActTs(txns, pays, 'a'), C.pd('2026-07-27').getTime());
+  assert.ok(C.lastActTs(txns, pays, 'b') > C.lastActTs(txns, pays, 'a'), '同一天，刚记的更新');
+  assert.strictEqual(C.lastActTs(txns, pays, 'c'), C.pd('2026-07-25').getTime() + 100, '还款也算变动');
+  assert.strictEqual(C.lastActTs(txns, pays, 'x'), 0, '从未有流水返回 0');
+});
+
+test('recent 排序：欠款卡在前 → 无欠款但有流水 → 从未操作沉底；档内按记账时刻倒序', () => {
+  const T = d => C.pd(d).getTime();
+  const mk = (id, st, actTs) => ({ id, band: C.recentBand(st, actTs), actTs });
+  const views = [
+    mk('广州', 'ok',   T('2026-07-27')),         // 欠款，同日老记录（0 点）
+    mk('光大', 'idle', T('2026-07-27') + 2000),  // 刚还清，无欠款
+    mk('中信', 'ok',   T('2026-07-27') + 5000),  // 欠款，最新一笔操作
+    mk('广发', 'idle', 0),                       // 从未操作
+    mk('浦发', 'idle', 0),                       // 从未操作（相对顺序不变）
+  ];
+  views.sort(C.recentCmp);
+  assert.deepStrictEqual(views.map(v => v.id), ['中信', '广州', '光大', '广发', '浦发']);
+});
