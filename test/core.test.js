@@ -245,6 +245,7 @@ test('buildICS：7 张卡逐月核对日期、提醒规则、RFC 行长', () => 
                        .map(e => p8(e.start)).sort((a, b) => a - b);
     assert.strictEqual(dues.length, 12, bank);
     let a = C.nextStmt(sd, now);
+    if (C.fd(C.addD(a, -bf)) < C.fd(now)) a = C.nextStmt(sd, C.addD(a, 1));  // 过期还款提醒顺延到下周期
     for (let m = 0; m < 12; m++) {
       assert.strictEqual(C.fd(dues[m]), C.fd(C.addD(a, -bf)), `${bank} 第${m + 1}月`);
       assert.strictEqual(dues[m].getDate(), remindDom, `${bank} 提醒固定${remindDom}号`);

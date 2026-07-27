@@ -256,18 +256,24 @@
       const nm = cardLabel(c), b = bufOf(c, settings);
       const whoLine = opts.multiUser && personName(c.personId)
         ? '\n持卡人：' + personName(c.personId) : '';
-      let a = nextStmt(c.statementDay, now0);
+      // 还款提醒（账单日 − buffer）可能已经过了今天——比如今天 7/27、账单日 7/28、提前 4 天，
+      // 提醒日 7/24 已过。过期的不提，从下一个周期开始，避免把过去的日期写进日历。
+      // 可刷提醒在账单日次日，恒为未来，无需前移。两条序列各生成 months 条，总数不变。
+      let aDue = nextStmt(c.statementDay, now0);
+      while (fd(addD(aDue, -b)) < fd(now0)) aDue = nextStmt(c.statementDay, addD(aDue, 1));
+      let aOpen = nextStmt(c.statementDay, now0);
       for (let i = 0; i < months; i++) {
-        out.push({ uid: c.id + '-due-' + icsDate(a), kind: 'due',
-          date: fd(addD(a, -b)), title: '【还款】' + nm,
-          desc: '账单日 ' + md(a) + '。请在今天之前把本周期刷的金额全部还清，账单日结算时余额为 0 才不会出账单。'
+        out.push({ uid: c.id + '-due-' + icsDate(aDue), kind: 'due',
+          date: fd(addD(aDue, -b)), title: '【还款】' + nm,
+          desc: '账单日 ' + md(aDue) + '。请在今天之前把本周期刷的金额全部还清，账单日结算时余额为 0 才不会出账单。'
               + '\n还款到账可能需要 1 天，别卡最后一刻。' + whoLine });
-        const op = addD(a, 1);
+        const op = addD(aOpen, 1);
         out.push({ uid: c.id + '-open-' + icsDate(op), kind: 'open',
           date: fd(op), title: '【可刷卡】' + nm,
-          desc: '账单日 ' + md(a) + ' 已过，新周期开始。本期还款截止 '
+          desc: '账单日 ' + md(aOpen) + ' 已过，新周期开始。本期还款截止 '
               + md(addD(nextStmt(c.statementDay, op), -b)) + '。' });
-        a = nextStmt(c.statementDay, addD(a, 1));
+        aDue = nextStmt(c.statementDay, addD(aDue, 1));
+        aOpen = nextStmt(c.statementDay, addD(aOpen, 1));
       }
     }
     return out;
