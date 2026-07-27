@@ -52,4 +52,7 @@
   </view>
 
   <view wx:if="{{hasCards}}" class="fab" bindtap="goSwipe">记一笔消费</view>
+
+  <repay-modal show="{{repayShow}}" label="{{repayLabel}}" owed="{{repayOwed}}"
+               bind:cancel="repayCancel" bind:confirm="repayConfirm" />
 </view>

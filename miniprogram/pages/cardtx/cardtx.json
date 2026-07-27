@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "卡片明细"
+  "navigationBarTitleText": "卡片明细",
+  "usingComponents": {
+    "repay-modal": "/components/repay/repay"
+  }
 }

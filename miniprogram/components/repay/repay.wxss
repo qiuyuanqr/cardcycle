@@ -1,0 +1,18 @@
+.rp-mask {
+  position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 48rpx;
+}
+.rp-panel {
+  background: #fff;
+  border-radius: 28rpx;
+  padding: 36rpx 32rpx 32rpx;
+  width: 100%;
+  max-width: 600rpx;
+}
+.rp-title { font-size: 34rpx; font-weight: 650; text-align: center; }
+.rp-sub { font-size: 26rpx; color: #5d6472; text-align: center; margin-top: 8rpx; }
+.rp-acts { display: flex; gap: 18rpx; margin-top: 32rpx; }
+.rp-btn { flex: 1; }

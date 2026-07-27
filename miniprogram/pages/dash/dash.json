@@ -1,1 +1,6 @@
-{ "navigationBarTitleText": "卡周期" }
+{
+  "navigationBarTitleText": "卡周期",
+  "usingComponents": {
+    "repay-modal": "/components/repay/repay"
+  }
+}

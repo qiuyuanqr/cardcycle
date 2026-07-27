@@ -1,0 +1,16 @@
+<view wx:if="{{show}}" class="rp-mask" bindtap="cancel">
+  <view class="rp-panel" catchtap="noop">
+    <view class="rp-title">登记还款</view>
+    <view class="rp-sub">{{label}} · 待还 ¥{{owed}}</view>
+
+    <view class="lbl">这次还了多少</view>
+    <input class="ipt" type="digit" placeholder="不填 = 全额 ¥{{owed}}"
+           value="{{amount}}" bindinput="onInput" />
+    <view class="tip">少于全额时按时间先后核销，钱不够整笔的那一笔会拆成「已还＋未还」两条。逐笔操作可在明细里点「标已还」。</view>
+
+    <view class="rp-acts">
+      <view class="btn ghost rp-btn" catchtap="cancel">取消</view>
+      <view class="btn rp-btn" catchtap="confirm">登记</view>
+    </view>
+  </view>
+</view>

@@ -40,4 +40,6 @@
     </view>
   </view>
 
+  <repay-modal show="{{repayShow}}" label="{{repayLabel}}" owed="{{repayOwed}}"
+               bind:cancel="repayCancel" bind:confirm="repayConfirm" />
 </view>

@@ -1,7 +1,10 @@
 const store = require('../../utils/store.js');
 
 Page({
-  data: { v: null, rows: [], stat: null },
+  data: {
+    v: null, rows: [], stat: null,
+    repayShow: false, repayLabel: '', repayOwed: ''
+  },
 
   onLoad(q) { this.id = q.id; },
   onShow() { this.refresh(); },
@@ -15,7 +18,17 @@ Page({
     this.setData(d);
   },
 
-  repay() { store.promptRepay(this.S, this.id, () => this.refresh()); },
+  repay() {
+    const info = store.repayInfo(this.S, this.id);
+    if (!info) return;
+    this.setData({ repayShow: true, repayLabel: info.label, repayOwed: info.owedText });
+  },
+  repayCancel() { this.setData({ repayShow: false }); },
+  repayConfirm(e) {
+    if (!store.applyRepay(this.S, this.id, e.detail.amount)) return;
+    this.setData({ repayShow: false });
+    this.refresh();
+  },
   goSwipe() { wx.navigateTo({ url: '/pages/swipe/swipe?cardId=' + this.id }); },
 
   toggle(e) {
