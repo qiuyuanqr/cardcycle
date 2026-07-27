@@ -148,23 +148,33 @@ Page({
     });
   },
   writeCalendar(rem) {
+    if (!rem.length) return;
     let i = 0, fail = 0;
+    const errs = {};   // errMsg → 次数：安卓失败原因五花八门，写完把最主要的展示出来
     wx.showLoading({ title: '写入中 0/' + rem.length, mask: true });
-    const next = () => {
-      if (i >= rem.length) {
-        wx.hideLoading();
-        if (fail >= rem.length) {
-          wx.showModal({ title: '没能写入日历', showCancel: false,
-            content: '一条都没写进去，可能是日历权限没开。请到手机系统设置里允许微信访问日历后重试，或改用「导出 .ics 文件」。' });
-        } else {
-          wx.showModal({ title: '已写入 ' + (rem.length - fail) + ' 条提醒', showCancel: false,
-            content: (fail ? '有 ' + fail + ' 条失败。' : '')
-                   + '之后由手机日历按时提醒，不用打开小程序。半年后再来点一次即可续上。'
-                   + '重新写入前，建议先在日历里删掉旧的「卡周期」提醒，避免重复。' });
-        }
-        return;
+    const done = () => {
+      wx.hideLoading();
+      // 取出现最多的失败原因，去掉冗余前缀方便阅读
+      const top = Object.keys(errs).sort((a, b) => errs[b] - errs[a])[0] || '';
+      const why = top ? '（' + top.replace(/^addPhoneCalendar:fail\s*/, '') + '）' : '';
+      if (fail >= rem.length) {
+        wx.showModal({ title: '没能写入日历', showCancel: false,
+          content: '一条都没写进去' + why + '。可能是手机系统没给微信日历权限，'
+                 + '请到系统设置里允许微信访问日历后重试，或改用「导出 .ics 文件」。' });
+      } else {
+        wx.showModal({ title: '已写入 ' + (rem.length - fail) + ' 条提醒', showCancel: false,
+          content: (fail ? '有 ' + fail + ' 条失败' + why + '。' : '')
+                 + '之后由手机日历按时提醒，不用打开小程序。半年后再来点一次即可续上。'
+                 + '重新写入前，建议先在日历里删掉旧的「卡周期」提醒，避免重复。' });
       }
-      const r = rem[i];
+    };
+    const step = () => {
+      i++;
+      wx.showLoading({ title: '写入中 ' + i + '/' + rem.length, mask: true });
+      if (i >= rem.length) { done(); return; }
+      setTimeout(() => write(rem[i], false), 300);   // 安卓连续调用会被限频，隔一拍再写
+    };
+    const write = (r, isRetry) => {
       const d = Core.pd(r.date);
       const start = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9).getTime() / 1000);
       wx.addPhoneCalendar({
@@ -173,15 +183,16 @@ Page({
         endTime: start + 3600,
         description: r.desc,
         alarm: true,
-        fail: () => { fail++; },
-        complete: () => {
-          i++;
-          if (i % 10 === 0) wx.showLoading({ title: '写入中 ' + i + '/' + rem.length, mask: true });
-          next();
+        success: () => step(),
+        fail: e => {
+          if (!isRetry) { setTimeout(() => write(r, true), 800); return; }  // 歇 800ms 重试一次
+          const m = (e && e.errMsg) || '未知原因';
+          errs[m] = (errs[m] || 0) + 1;
+          fail++; step();
         }
       });
     };
-    next();
+    write(rem[0], false);
   },
 
   /* ---- 提醒：导出 .ics 文件 ---- */
