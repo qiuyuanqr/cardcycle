@@ -24,6 +24,7 @@ function normalize(d) {
     const m = Core.migrateRepaid(S.txns, uid);
     S.txns = m.txns; S.payments = m.payments;
   }
+  S.terminals = Core.pruneSeedTerminals(S.terminals, S.txns, uid);
   return S;
 }
 

@@ -161,6 +161,26 @@
     return { txns: out, payments };
   }
 
+  /* ---------- 旧版种子商户清理 ---------- */
+  /**
+   * 小程序 2.1 首次启动预置过 4 个占位商户（A–D 机器，后改名商户 A–D），
+   * 2.2 起默认只留一个「老张便利店」；但种子只在存储为空时写入，
+   * 已种进老设备/老备份的占位商户不会自动变，需要在 normalize 时清理。
+   * 只清「名字仍是旧占位名、备注为空、从未记过账」的商户——真实在用的绝不动；
+   * 若清完一个不剩，补回默认「老张便利店」。纯函数：不修改传入数组。
+   */
+  function pruneSeedTerminals(terminals, txns, newId) {
+    newId = newId || (() => Math.random().toString(36).slice(2, 10));
+    const OLD = ['A 机器', 'B 机器', 'C 机器', 'D 机器',
+                 '商户 A', '商户 B', '商户 C', '商户 D'];
+    const used = new Set((txns || []).map(t => t.terminalId));
+    const out = (terminals || []).filter(t =>
+      !(OLD.includes(t.name) && !t.note && !used.has(t.id)));
+    if (!out.length && (terminals || []).length)
+      out.push({ id: newId(), name: '老张便利店', note: '' });
+    return out;
+  }
+
   /* ---------- 概览「最近变动」排序 ---------- */
   /**
    * 某张卡最后一次记账时刻（毫秒）。
@@ -285,6 +305,7 @@
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, calc, migrateRepaid, lastActTs, recentBand, recentCmp,
+           money, bufOf, calc, migrateRepaid, pruneSeedTerminals,
+           lastActTs, recentBand, recentCmp,
            buildReminders, buildICS, icsFold, utf8Len };
 }));

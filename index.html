@@ -233,6 +233,7 @@ function normalize(d){
     const m=CardCycleCore.migrateRepaid(s.txns,uid);
     s.txns=m.txns; s.payments=m.payments;
   }
+  s.terminals=CardCycleCore.pruneSeedTerminals(s.terminals,s.txns,uid);
   return s;
 }
 function load(){

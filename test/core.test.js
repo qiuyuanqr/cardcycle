@@ -298,3 +298,23 @@ test('recent 排序：欠款卡在前 → 无欠款但有流水 → 从未操作
   views.sort(C.recentCmp);
   assert.deepStrictEqual(views.map(v => v.id), ['中信', '广州', '光大', '广发', '浦发']);
 });
+
+test('pruneSeedTerminals：清理旧版占位商户，真实商户绝不动', () => {
+  const mk = (id, name, note) => ({ id, name, note: note || '' });
+  // 全是没用过的旧占位 → 清空并补默认「老张便利店」
+  const a = C.pruneSeedTerminals(
+    [mk('1', '商户 A'), mk('2', '商户 B'), mk('3', '商户 C'), mk('4', '商户 D')], [], () => 'n1');
+  assert.deepStrictEqual(a.map(t => t.name), ['老张便利店']);
+  // 记过账的占位保留，没用过的清掉；自定义名字的不动
+  const b = C.pruneSeedTerminals(
+    [mk('1', 'A 机器'), mk('2', 'B 机器'), mk('5', '真商户')],
+    [{ terminalId: '1' }], () => 'n2');
+  assert.deepStrictEqual(b.map(t => t.name), ['A 机器', '真商户']);
+  // 带备注的占位名视为用户自己的，不动
+  const c = C.pruneSeedTerminals([mk('1', '商户 A', '有备注')], [], () => 'n3');
+  assert.deepStrictEqual(c.map(t => t.name), ['商户 A']);
+  // 已是新种子的不重复补；用户主动清空列表的不强塞默认
+  assert.deepStrictEqual(C.pruneSeedTerminals([mk('9', '老张便利店')], [], () => 'n4')
+    .map(t => t.name), ['老张便利店']);
+  assert.deepStrictEqual(C.pruneSeedTerminals([], [], () => 'n5'), []);
+});
