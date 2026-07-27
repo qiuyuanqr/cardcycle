@@ -55,15 +55,13 @@
   <view class="sec">提醒</view>
   <view class="card">
     <view class="tip" style="margin-top:0">
-      把未来 6 个月的提醒写进手机系统日历（首次需要授权），
-      到点由手机日历提醒，不用打开小程序。
-      每张卡每月两条：该还款了、新周期可刷。
+      导出未来 12 个月的提醒日历文件，导入手机日历后到点自动提醒，不用打开小程序。
+      每张卡每月两条：该还款了（提前 3 天、1 天、当天各响一次）、新周期可刷。
     </view>
-    <view class="btn" style="margin-top:22rpx" bindtap="addToCalendar">写入手机日历</view>
-    <view class="btn ghost" style="margin-top:18rpx" bindtap="exportICS">导出 .ics 日历文件</view>
+    <view class="btn" style="margin-top:22rpx" bindtap="exportICS">导出 .ics 日历文件</view>
     <view class="tip">
-      .ics 文件适合导入电脑或其他设备的日历：生成后转发到微信聊天，在对应设备上点开导入。
-      重复写入会产生重复提醒，重新写入前建议先删掉日历里旧的「卡周期」提醒。
+      生成后转发到微信聊天（发给自己或文件传输助手即可），在手机或电脑上点开文件、选择用日历导入。
+      重复导入会产生重复提醒，重新导入前建议先删掉日历里旧的「卡周期」提醒。
     </view>
   </view>
 
