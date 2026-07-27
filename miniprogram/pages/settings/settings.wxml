@@ -13,9 +13,9 @@
     <view class="btn ghost" style="margin-top:22rpx" bindtap="addCard">＋ 添加信用卡</view>
   </view>
 
-  <view class="sec">刷卡机</view>
+  <view class="sec">常用商户</view>
   <view class="card">
-    <view wx:if="{{!terms.length}}" class="empty" style="padding:24rpx">还没有刷卡机</view>
+    <view wx:if="{{!terms.length}}" class="empty" style="padding:24rpx">还没有常用商户</view>
     <view wx:for="{{terms}}" wx:key="id" class="tx">
       <view class="tx-l">
         <view class="tx-t">{{item.name}}</view>
@@ -24,11 +24,11 @@
       <view class="btn sm danger" bindtap="delTerm" data-id="{{item.id}}">删</view>
     </view>
     <view class="row" style="margin-top:22rpx">
-      <input class="ipt grow" placeholder="机器名，如 A 便利店"
+      <input class="ipt grow" placeholder="商户名，如 老王便利店"
              value="{{newTerm}}" bindinput="onNewTerm" />
       <view class="btn sm" bindtap="addTerm">加</view>
     </view>
-    <view wx:if="{{terms.length}}" class="btn ghost" style="margin-top:18rpx" bindtap="goPos">使用情况与轮换间隔</view>
+    <view wx:if="{{terms.length}}" class="btn ghost" style="margin-top:18rpx" bindtap="goPos">商户使用情况与间隔</view>
   </view>
 
   <view class="sec">提醒</view>
@@ -58,7 +58,7 @@
   <view class="card">
     <view class="lbl" style="margin-top:0">新卡默认提前天数</view>
     <input class="ipt" type="number" value="{{buffer}}" bindblur="onBuffer" />
-    <view class="lbl">同机同卡最小间隔（天）</view>
+    <view class="lbl">同商户同卡最小间隔（天）</view>
     <input class="ipt" type="number" value="{{minGap}}" bindblur="onGap" />
     <view class="btn danger" style="margin-top:32rpx" bindtap="wipe">清空全部数据</view>
   </view>

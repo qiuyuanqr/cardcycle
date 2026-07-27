@@ -33,7 +33,7 @@ Page({
   goPos() { wx.navigateTo({ url: '/pages/pos/pos' }); },
   editCard(e) { wx.navigateTo({ url: '/pages/card/card?id=' + e.currentTarget.dataset.id }); },
 
-  /* ---- 机器 ---- */
+  /* ---- 商户 ---- */
   onNewTerm(e) { this.setData({ newTerm: e.detail.value }); },
   addTerm() {
     const v = (this.data.newTerm || '').trim();
@@ -47,7 +47,7 @@ Page({
   delTerm(e) {
     const id = e.currentTarget.dataset.id;
     wx.showModal({
-      title: '删除机器', content: '相关刷卡记录会保留，但不再显示机器名。',
+      title: '删除商户', content: '相关消费记录会保留，但不再显示商户名。',
       success: r => {
         if (!r.confirm) return;
         const S = this.S;

@@ -12,7 +12,7 @@
     </view>
 
     <block wx:if="{{terms.length}}">
-      <view class="lbl">用哪台机器 <text class="lbl-sub">· 已按闲置排序</text></view>
+      <view class="lbl">在哪个商户 <text class="lbl-sub">· 已按闲置排序</text></view>
       <view class="chips">
         <view wx:for="{{terms}}" wx:key="id"
               class="chip {{item.id === selTerm ? 'on' : ''}}"
@@ -21,7 +21,7 @@
         </view>
       </view>
     </block>
-    <view wx:else class="tip">还没添加刷卡机，可以先只记金额。</view>
+    <view wx:else class="tip">还没添加商户，可以先只记金额。</view>
 
     <view class="two" style="margin-top:8rpx">
       <view>

@@ -20,7 +20,7 @@ function load() {
   if (!d) {
     const S = clone(DEF);
     S.people = [{ id: uid(), name: '我' }];
-    S.terminals = ['A 机器', 'B 机器', 'C 机器', 'D 机器']
+    S.terminals = ['商户 A', '商户 B', '商户 C', '商户 D']
       .map(n => ({ id: uid(), name: n, note: '' }));
     save(S);
     return S;
@@ -101,7 +101,7 @@ function dashData(S) {
   };
 }
 
-/* 记一笔页：卡与机器的选择列表 */
+/* 记一笔页：卡与商户的选择列表 */
 function swipeOptions(S, selCardId) {
   const t0 = Core.today();
   const cards = S.cards.map(c => {

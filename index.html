@@ -198,7 +198,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
 <div class="tabbar" id="tabbar">
   <button class="on" data-v="dash"><svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/></svg>概览</button>
   <button data-v="hist"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="3.6" cy="6" r="1.2"/><circle cx="3.6" cy="12" r="1.2"/><circle cx="3.6" cy="18" r="1.2"/></svg>流水</button>
-  <button data-v="pos"><svg viewBox="0 0 24 24"><rect x="4.5" y="2.5" width="15" height="19" rx="2.5"/><path d="M8.5 7h7M8.5 11h7"/><circle cx="12" cy="17" r="1.5"/></svg>机器</button>
+  <button data-v="pos"><svg viewBox="0 0 24 24"><rect x="4.5" y="2.5" width="15" height="19" rx="2.5"/><path d="M8.5 7h7M8.5 11h7"/><circle cx="12" cy="17" r="1.5"/></svg>商户</button>
   <button data-v="set"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M12 2.2v2.6M12 19.2v2.6M4.7 4.7l1.9 1.9M17.4 17.4l1.9 1.9M2.2 12h2.6M19.2 12h2.6M4.7 19.3l1.9-1.9M17.4 6.6l1.9-1.9"/></svg>设置</button>
 </div>
 
@@ -335,7 +335,7 @@ function renderHist(){
   h+='<div class="card">'+rows.map(t=>{
     const c=cardById(t.cardId),tm=termById(t.terminalId);
     const sub=[c?(isMulti()?personName(c.personId)+' · ':'')+cardLabel(c):'已删除的卡',
-               tm?tm.name:'未记机器',t.note].filter(Boolean).join(' · ');
+               tm?tm.name:'未记商户',t.note].filter(Boolean).join(' · ');
     return '<div class="tx"><div class="tx-l"><div class="tx-t">'+t.date+' &nbsp;¥'+money(t.amount)+'</div>'
       +'<div class="tx-s">'+esc(sub)+'</div></div>'
       +(t.repaid?'<span class="tag paid">已还</span>':'<span class="tag">未还</span>')
@@ -355,12 +355,12 @@ function delTx(id){
 }
 
 /* =====================================================================
-   机器
+   商户
    ===================================================================== */
 function renderPos(){
   const el=document.getElementById('v-pos');
   if(!S.terminals.length){
-    el.innerHTML='<div class="card"><div class="empty">还没有刷卡机。<br>去「设置」添加。</div></div>'; return;
+    el.innerHTML='<div class="card"><div class="empty">还没有常用商户。<br>去「设置」添加。</div></div>'; return;
   }
   const t0=today(), mg=S.settings.minGap||7, mk=fd(t0).slice(0,7);
   const rows=S.terminals.map(tm=>{
@@ -381,7 +381,7 @@ function renderPos(){
         +(r.g===9999?'—':r.g)+'</b>天未用</div></div>';
     }).join('')+'</div>';
 
-  h+='<div class="card"><div class="sec" style="margin:0 0 6px">卡 × 机器 · 上次使用</div>';
+  h+='<div class="card"><div class="sec" style="margin:0 0 6px">卡 × 商户 · 上次消费</div>';
   if(!S.cards.length) h+='<div class="empty">还没有信用卡。</div>';
   else{
     h+='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">'
@@ -397,7 +397,7 @@ function renderPos(){
               +col+';font-variant-numeric:tabular-nums">'+(g===null?'—':g+'天')+'</td>';
           }).join('')+'</tr>').join('')+'</table></div>';
   }
-  h+='<div class="tip">数字＝距上次「这张卡在这台机器」刷卡的天数。绿色表示已超过设定的 '+mg+' 天。</div></div>';
+  h+='<div class="tip">数字＝距上次「这张卡在这家商户」消费的天数。绿色表示已超过设定的 '+mg+' 天。</div></div>';
   el.innerHTML=h;
 }
 
@@ -419,13 +419,13 @@ function renderSet(){
       }).join(''):'<div class="empty" style="padding:14px">还没有信用卡</div>')
     +'<button class="btn ghost full" style="margin-top:11px" onclick="openCard()">＋ 添加信用卡</button></div>';
 
-  h+='<div class="sec">刷卡机</div><div class="card">'
+  h+='<div class="sec">常用商户</div><div class="card">'
     +(S.terminals.length?S.terminals.map(t=>
         '<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(t.name)+'</div>'
         +'<div class="tx-s">'+S.txns.filter(x=>x.terminalId===t.id).length+' 笔记录</div></div>'
         +'<button class="btn sm danger" onclick="delTerm(\''+t.id+'\')">删</button></div>'
-      ).join(''):'<div class="empty" style="padding:14px">还没有刷卡机</div>')
-    +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="机器名，如 A 便利店">'
+      ).join(''):'<div class="empty" style="padding:14px">还没有常用商户</div>')
+    +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="商户名，如 老王便利店">'
     +'<button class="btn" onclick="addTerm()">加</button></div></div>';
 
   if(isMulti()){
@@ -462,9 +462,9 @@ function renderSet(){
     +'<label>新卡默认提前天数</label>'
     +'<input type="number" min="0" max="10" value="'+(S.settings.buffer||3)+'" onchange="setBuffer(this.value)">'
     +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
-    +'<label>同机同卡最小间隔（天）</label>'
+    +'<label>同商户同卡最小间隔（天）</label>'
     +'<input type="number" min="0" max="60" value="'+(S.settings.minGap||7)+'" onchange="setGap(this.value)">'
-    +'<div class="tip">只影响「机器」页的绿灯/红灯判断，不限制记录。</div>'
+    +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div>'
     +'<button class="btn danger full" style="margin-top:16px" onclick="wipe()">清空全部数据</button></div>';
 
   h+='<div class="card" style="background:transparent;box-shadow:none;border:1px dashed var(--line)">'
@@ -508,7 +508,7 @@ function delPerson(id){
 }
 function addTerm(){const v=document.getElementById('ntName').value.trim();if(!v)return;
   S.terminals.push({id:uid(),name:v,note:''});save();renderAll();}
-function delTerm(id){if(!confirm('删除这台机器？'))return;
+function delTerm(id){if(!confirm('删除这个商户？'))return;
   S.terminals=S.terminals.filter(t=>t.id!==id);save();renderAll();}
 function delCard(id){
   const n=S.txns.filter(t=>t.cardId===id).length;
@@ -599,14 +599,14 @@ function drawSwipe(){
       return '<div class="chip'+(c.id===swipeCard?' on':'')+'" onclick="swipeCard=\''+c.id+'\';drawSwipe()">'
         +esc(cardLabel(c))+'<small>'+kk.label+'</small></div>';}).join('')+'</div>'
     +(S.terminals.length
-      ?'<label>用哪台机器 <span style="color:var(--faint);font-weight:400">· 已按闲置排序</span></label><div class="chips">'
+      ?'<label>在哪个商户 <span style="color:var(--faint);font-weight:400">· 已按闲置排序</span></label><div class="chips">'
        +S.terminals.map(tm=>({tm,
            g:termLastFor(tm.id,swipeCard)?diffD(pd(termLastFor(tm.id,swipeCard)),t0):null,
            ga:termLast(tm.id)?diffD(pd(termLast(tm.id)),t0):9999}))
          .sort((a,b)=>b.ga-a.ga)
          .map(o=>'<div class="chip'+(o.tm.id===swipeTerm?' on':'')+'" onclick="swipeTerm=\''+o.tm.id+'\';drawSwipe()">'
            +esc(o.tm.name)+'<small>'+(o.g===null?'本卡未用过':'本卡 '+o.g+' 天前')+'</small></div>').join('')+'</div>'
-      :'<div class="hint" style="margin-top:12px">还没添加刷卡机，可以先只记金额。</div>')
+      :'<div class="hint" style="margin-top:12px">还没添加商户，可以先只记金额。</div>')
     +'<div class="two"><div><label>金额</label><input id="sAmt" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'
     +'<div><label>日期</label><input id="sDate" type="date" value="'+fd(t0)+'"></div></div>'
     +'<label>备注（选填）</label><input id="sNote">'+warn
@@ -631,7 +631,7 @@ function openRepay(cid){
   showModal('<h3>登记还款</h3><div class="hint">'+esc(cardLabel(c))+' · 待还 ¥'+money(k.cur+k.over)+'</div>'
     +'<div style="margin-top:12px">'+rows.map(t=>{const tm=termById(t.terminalId);
       return '<div class="tx"><div class="tx-l"><div class="tx-t">'+t.date+' &nbsp;¥'+money(t.amount)+'</div>'
-        +'<div class="tx-s">'+esc(tm?tm.name:'未记机器')+'</div></div>'
+        +'<div class="tx-s">'+esc(tm?tm.name:'未记商户')+'</div></div>'
         +'<button class="btn sm ghost" onclick="toggleTx(\''+t.id+'\');openRepay(\''+cid+'\')">已还</button></div>';
       }).join('')+'</div>'
     +'<div class="macts"><button class="btn ghost" onclick="closeModal()">关闭</button>'
@@ -772,10 +772,10 @@ function renderAll(){
   renderDash();renderHist();renderPos();renderSet();
 }
 
-// 首次打开：一个隐形持卡人 + 四台占位机器（可改可删）
+// 首次打开：一个隐形持卡人 + 四个占位商户（可改可删）
 if(!localStorage.getItem(KEY)){
   S.people=[{id:uid(),name:'我'}];
-  S.terminals=['A 机器','B 机器','C 机器','D 机器'].map(n=>({id:uid(),name:n,note:''}));
+  S.terminals=['商户 A','商户 B','商户 C','商户 D'].map(n=>({id:uid(),name:n,note:''}));
   save();
 }
 // 老数据迁移：已经有多个持卡人的，自动切到多人模式

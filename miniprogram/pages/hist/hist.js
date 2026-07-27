@@ -32,7 +32,7 @@ Page({
         return {
           id: t.id, date: t.date, amt: Core.money(t.amount), repaid: t.repaid,
           sub: [c ? store.cardLabel(c) : '已删除的卡',
-                tm ? tm.name : '未记机器', t.note].filter(Boolean).join(' · ')
+                tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ')
         };
       });
     const all = S.txns.filter(t => !fid || t.cardId === fid);

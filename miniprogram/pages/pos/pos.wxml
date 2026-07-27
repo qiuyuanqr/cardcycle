@@ -1,6 +1,6 @@
 <view class="wrap">
   <view wx:if="{{!list.length}}" class="card">
-    <view class="empty">还没有刷卡机。\n去「设置」添加。</view>
+    <view class="empty">还没有常用商户。\n去「设置」添加。</view>
   </view>
 
   <view wx:if="{{list.length}}" class="card">
@@ -19,7 +19,7 @@
   </view>
 
   <view wx:if="{{matrix}}" class="card">
-    <view class="sec" style="margin:0 0 12rpx">卡 × 机器 · 上次使用</view>
+    <view class="sec" style="margin:0 0 12rpx">卡 × 商户 · 上次消费</view>
     <scroll-view scroll-x="true">
       <view class="mtx">
         <view class="mrow mhead">
@@ -33,6 +33,6 @@
         </view>
       </view>
     </scroll-view>
-    <view class="tip">数字＝距上次「这张卡在这台机器」刷卡的天数。绿色表示已超过设定的 {{minGap}} 天。</view>
+    <view class="tip">数字＝距上次「这张卡在这家商户」消费的天数。绿色表示已超过设定的 {{minGap}} 天。</view>
   </view>
 </view>
