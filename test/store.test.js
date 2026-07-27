@@ -118,6 +118,40 @@ test('removeCard 经 store 走一遍：还款不留孤儿，汇总不再算错',
   assert.strictEqual(r.txns.length, 0);
 });
 
+/* ---------- 备份往返：导出的东西必须能原样导回来 ---------- */
+
+test('备份往返无损：导出 → 导入 → 再导出，数据完全一致且流水一条不少', () => {
+  mockWx(REAL());
+  const S = store.load();
+  // 攒点真实规模的流水，别拿空数据自欺欺人
+  for (let m = 0; m < 6; m++) {
+    S.txns.push({ id: 'tx' + m, cardId: 'cA', terminalId: 'm1',
+                  date: '2026-0' + (m + 1) + '-12', amount: 1234.56, note: '', ts: 1000 + m });
+    S.payments.push({ id: 'pm' + m, cardId: 'cA',
+                      date: '2026-0' + (m + 1) + '-20', amount: 1000, ts: 2000 + m });
+  }
+  const exported = JSON.stringify(S);              // 「导出备份文件」写进文件的就是这个
+  const back = store.normalize(JSON.parse(exported));   // 「从文件导入」走的就是这条
+
+  assert.strictEqual(back.txns.length, S.txns.length, '★ 消费一条都不能少');
+  assert.strictEqual(back.payments.length, S.payments.length, '★ 还款一条都不能少');
+  assert.strictEqual(JSON.stringify(store.normalize(JSON.parse(JSON.stringify(back)))),
+                     JSON.stringify(back), '再导一次必须完全一致');
+
+  // 待还金额必须和导出前分毫不差——这才是备份有没有用的真正判据
+  const k1 = C.calc(S.cards[0], S.txns, S.payments, S.settings, C.pd('2026-07-27'));
+  const k2 = C.calc(back.cards[0], back.txns, back.payments, back.settings, C.pd('2026-07-27'));
+  assert.strictEqual(k2.cur + k2.over, k1.cur + k1.over, '★ 恢复后的待还金额必须一致');
+  assert.strictEqual(k2.deposit, k1.deposit);
+});
+
+test('备份被截断（复制时漏了尾巴）时必须报错，不能当成空数据默默覆盖', () => {
+  mockWx(REAL());
+  const full = JSON.stringify(store.load());
+  const cut = full.slice(0, Math.floor(full.length * 0.8));   // 少了结尾的 }
+  assert.throws(() => JSON.parse(cut), '截断的备份解析必然失败——上层据此提示用户');
+});
+
 test('normalize：历史遗留的孤儿还款（老版本删卡留下的）自动清掉', () => {
   mockWx(undefined);
   const d = REAL();
