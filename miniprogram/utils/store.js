@@ -18,31 +18,83 @@ const uid = () => Math.random().toString(36).slice(2, 10);
 
 /* 存储/备份数据 → 内部状态（含 2.2 以前逐笔 repaid 标记的旧数据迁移） */
 function normalize(d) {
+  // 来路不明的内容先挡一道：字符串会被 Object.assign 按字符展开成 {0:'{',1:'"'…}，
+  // 结果是一份「看着正常、其实全空」的数据，比直接报错更难发现。
+  if (!d || typeof d !== 'object' || Array.isArray(d)) d = {};
   const S = Object.assign(clone(DEF), d);
   S.settings = Object.assign(clone(DEF.settings), d.settings || {});
+  // 数组字段被写坏时兜住，后面所有 filter/map 才有前提
+  for (const k of ['people', 'cards', 'terminals', 'txns', 'payments'])
+    if (!Array.isArray(S[k])) S[k] = [];
   if (!Array.isArray(d.payments)) {
     const m = Core.migrateRepaid(S.txns, uid);
     S.txns = m.txns; S.payments = m.payments;
   }
   S.terminals = Core.pruneSeedTerminals(S.terminals, S.txns, uid);
+  // 老版本删卡只删了消费、还款留成了孤儿，会让流水页汇总凭空多出存款——顺手清掉
+  const o = Core.pruneOrphans(S.cards, S.txns, S.payments);
+  S.txns = o.txns; S.payments = o.payments;
   return S;
 }
 
+/* 读存储：偶发失败重试一次，仍失败则如实返回失败，绝不含糊成「没有数据」 */
+function readRaw() {
+  for (let i = 0; i < 2; i++) {
+    try { return { ok: true, raw: wx.getStorageSync(KEY) || null }; }
+    catch (e) { if (i) return { ok: false, err: e }; }
+  }
+}
+
 function load() {
-  let d = null;
-  try { d = wx.getStorageSync(KEY) || null; } catch (e) {}
-  if (!d) {
+  const r = readRaw();
+  if (!r.ok) {
+    // ★ 读失败 ≠ 首次启动。
+    //   这里若照旧种下种子并写盘，就等于用一份空数据覆盖掉盘上的真数据，
+    //   而且全程静默、不可逆。所以：不写盘，返回带 readFailed 标记的空状态，
+    //   下面的 save 也会拒绝把它写回去。用户重启小程序即可恢复。
+    const S = clone(DEF);
+    S.readFailed = true;
+    try {
+      wx.showToast({ title: '数据读取失败，请重启小程序', icon: 'none', duration: 3000 });
+    } catch (e) {}
+    return S;
+  }
+  if (!r.raw) {                      // 真·首次启动：这个环境的存储确实是空的
     const S = clone(DEF);
     S.people = [{ id: uid(), name: '我' }];
     S.terminals = [{ id: uid(), name: '老张便利店', note: '' }];
     save(S);
     return S;
   }
-  return normalize(d);
+  return normalize(r.raw);
 }
+
 function save(S) {
-  try { wx.setStorageSync(KEY, S); }
-  catch (e) { wx.showToast({ title: '保存失败', icon: 'error' }); }
+  if (!S || S.readFailed) return false;   // 空壳绝不许写回，否则一次读失败＝永久丢数据
+  try { wx.setStorageSync(KEY, S); return true; }
+  catch (e) { wx.showToast({ title: '保存失败', icon: 'error' }); return false; }
+}
+
+/* 当前运行环境 + 数据概况（设置页自查用）
+   「扫码进去数据有时有有时没有」绝大多数是这里的 envVersion 不同：
+   预览码进开发版、体验码进体验版、搜索/转发进正式版，
+   三个环境的本地存储由微信隔离，互相看不见对方的数据。 */
+function storageEnv(S) {
+  const NAME = { develop: '开发版（预览码）', trial: '体验版（体验码）', release: '正式版' };
+  let env = '';
+  try { env = ((wx.getAccountInfoSync() || {}).miniProgram || {}).envVersion || ''; } catch (e) {}
+  let size = '';
+  try {
+    const i = wx.getStorageInfoSync();
+    if (i && typeof i.currentSize === 'number') size = i.currentSize + ' KB';
+  } catch (e) {}
+  return {
+    envName: NAME[env] || '未知环境',
+    isolated: env !== 'release',      // 非正式版都是独立存储空间
+    cards: S.cards.length, txns: S.txns.length, payments: S.payments.length,
+    sizeText: size,
+    readFailed: S.readFailed === true
+  };
 }
 function ensureMe(S) {
   if (!S.people.length) S.people.push({ id: uid(), name: '我' });
@@ -170,12 +222,12 @@ function cardTxData(S, cardId) {
   const pays = S.payments.filter(p => p.cardId === cardId);
   const rows = txs.map(t => {
       const tm = termById(S, t.terminalId);
-      return { kind: 'tx', id: t.id, date: t.date, amt: Core.money(t.amount),
+      return { kind: 'tx', id: t.id, date: t.date, ts: t.ts, amt: Core.money(t.amount),
                sub: [tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ') };
     })
-    .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date,
+    .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date, ts: p.ts,
                              amt: Core.money(p.amount), sub: '' })))
-    .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+    .sort(Core.txnCmp);   // 同一天按记账时刻倒序，与概览「最近变动」同口径
   const tot = txs.reduce((s, t) => s + t.amount, 0);
   const paid = pays.reduce((s, p) => s + p.amount, 0);
   const owe = Math.max(0, Math.round((tot - paid) * 100) / 100);
@@ -210,7 +262,12 @@ function applyRepay(S, cardId, raw) {
   if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return false; }
   const rec = Math.round(amt * 100) / 100;
   S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec, ts: Date.now() });
-  save(S);
+  if (!save(S)) {                 // 没写进去就别说成功，也别留在内存里造成「记过了」的错觉
+    S.payments.pop();
+    wx.showModal({ title: '没能保存', showCancel: false,
+      content: '这笔还款没有写入本机存储，请退出小程序重新进入后再试。' });
+    return false;
+  }
   if (rec > info.owed) {
     const dep = Math.round((rec - info.owed) * 100) / 100;
     wx.showModal({ title: '已登记还款 ¥' + Core.money(rec), showCancel: false,
@@ -222,7 +279,7 @@ function applyRepay(S, cardId, raw) {
 }
 
 module.exports = {
-  Core, KEY, DEF, load, save, uid, ensureMe,
+  Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe,
   cardById, termById, cardLabel, termLast, termLastFor,
   cardView, dashData, swipeOptions, swipeWarning,
   cardTxData, repayInfo, applyRepay

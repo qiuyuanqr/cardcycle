@@ -227,23 +227,41 @@ let S=load();
 
 // 备份/存储数据 → 内部状态（含 2.2 以前逐笔 repaid 标记的旧数据迁移）
 function normalize(d){
+  // 来路不明的内容先挡一道：字符串会被 Object.assign 按字符展开成 {0:'{',1:'"'…}，
+  // 结果是一份「看着正常、其实全空」的数据，比直接报错更难发现。
+  if(!d||typeof d!=='object'||Array.isArray(d)) d={};
   const s=Object.assign(structuredClone(DEF),d);
   s.settings=Object.assign(structuredClone(DEF.settings),d.settings||{});
+  for(const k of ['people','cards','terminals','txns','payments'])
+    if(!Array.isArray(s[k])) s[k]=[];
   if(!Array.isArray(d.payments)){
     const m=CardCycleCore.migrateRepaid(s.txns,uid);
     s.txns=m.txns; s.payments=m.payments;
   }
   s.terminals=CardCycleCore.pruneSeedTerminals(s.terminals,s.txns,uid);
+  // 老版本删卡只删了消费、还款留成了孤儿，会让流水汇总凭空多出存款——顺手清掉
+  const o=CardCycleCore.pruneOrphans(s.cards,s.txns,s.payments);
+  s.txns=o.txns; s.payments=o.payments;
   return s;
 }
+// 数据读不出来时置位：此后一切写入都要挡掉，否则第一次操作就把原数据覆盖成空
+let loadFailed=false;
 function load(){
   try{
     const r=localStorage.getItem(KEY);
-    if(!r) return structuredClone(DEF);
+    if(!r) return structuredClone(DEF);      // 真·首次打开
     return normalize(JSON.parse(r));
-  }catch(e){ return structuredClone(DEF); }
+  }catch(e){
+    loadFailed=true;
+    return structuredClone(DEF);
+  }
 }
 function save(){
+  if(loadFailed){
+    alert('这次没能读出本机数据，为避免把原数据覆盖成空的，已阻止保存。\n\n'
+      +'请刷新页面重试；如果反复如此，先用浏览器的开发者工具导出 cardcycle.v1 的内容留底。');
+    return;
+  }
   try{ localStorage.setItem(KEY,JSON.stringify(S)); }
   catch(e){ alert('保存失败：'+e.message+'\n\n请到「设置」导出备份，避免数据丢失。'); }
 }
@@ -340,6 +358,9 @@ function cardHTML(c,k){
 let histFilter='';
 function renderHist(){
   const el=document.getElementById('v-hist');
+  // 选中的卡被删掉后，下拉框会跳回「全部信用卡」而列表还在按已删的 id 过滤，
+  // 结果是「显示全部却一条也没有」——这里把失效的筛选回落掉。
+  if(histFilter && !cardById(histFilter)) histFilter='';
   let h='<div class="card"><select onchange="histFilter=this.value;renderHist()">'
     +'<option value="">全部信用卡</option>'
     +S.cards.map(c=>'<option value="'+c.id+'"'+(histFilter===c.id?' selected':'')+'>'
@@ -349,11 +370,11 @@ function renderHist(){
   const pays=S.payments.filter(p=>!histFilter||p.cardId===histFilter);
   const rows=txs.map(t=>{
       const tm=termById(t.terminalId);
-      return {kind:'tx',id:t.id,date:t.date,amount:t.amount,
+      return {kind:'tx',id:t.id,date:t.date,ts:t.ts,amount:t.amount,
         sub:[cardSub(cardById(t.cardId)),tm?tm.name:'未记商户',t.note].filter(Boolean).join(' · ')};
-    }).concat(pays.map(p=>({kind:'pay',id:p.id,date:p.date,amount:p.amount,
+    }).concat(pays.map(p=>({kind:'pay',id:p.id,date:p.date,ts:p.ts,amount:p.amount,
         sub:cardSub(cardById(p.cardId))})))
-    .sort((a,b)=>b.date.localeCompare(a.date)||b.id.localeCompare(a.id));
+    .sort(CardCycleCore.txnCmp);   // 同一天按记账时刻倒序，与概览「最近变动」同口径
   if(!rows.length){ el.innerHTML=h+'<div class="card"><div class="empty">还没有记录。</div></div>'; return; }
   const tot=txs.reduce((s,t)=>s+t.amount,0), paid=pays.reduce((s,p)=>s+p.amount,0);
   const owe=Math.max(0,Math.round((tot-paid)*100)/100), extra=Math.max(0,Math.round((paid-tot)*100)/100);
@@ -391,7 +412,7 @@ function renderPos(){
   if(!S.terminals.length){
     el.innerHTML='<div class="card"><div class="empty">还没有常用商户。<br>去「设置」添加。</div></div>'; return;
   }
-  const t0=today(), mg=S.settings.minGap||7, mk=fd(t0).slice(0,7);
+  const t0=today(), mg=S.settings.minGap==null?7:S.settings.minGap, mk=fd(t0).slice(0,7);
   const rows=S.terminals.map(tm=>{
     const l=termLast(tm.id);
     return {tm,l,g:l?diffD(pd(l),t0):9999,
@@ -469,10 +490,10 @@ function renderSet(){
     +'<div class="tip" style="margin-top:2px">为朋友代管卡片时开启，界面会出现「持卡人」。<br>默认关闭：只管自己的卡，界面更干净。</div></div>'
     +'<button class="btn sm '+(isMulti()?'':'ghost')+'" onclick="toggleMulti()">'+(isMulti()?'已开启':'已关闭')+'</button></div>'
     +'<label>新卡默认提前天数</label>'
-    +'<input type="number" min="0" max="10" value="'+(S.settings.buffer||3)+'" onchange="setBuffer(this.value)">'
+    +'<input type="number" min="0" max="10" value="'+(S.settings.buffer==null?3:S.settings.buffer)+'" onchange="setBuffer(this.value)">'
     +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
     +'<label>同商户同卡最小间隔（天）</label>'
-    +'<input type="number" min="0" max="60" value="'+(S.settings.minGap||7)+'" onchange="setGap(this.value)">'
+    +'<input type="number" min="0" max="60" value="'+(S.settings.minGap==null?7:S.settings.minGap)+'" onchange="setGap(this.value)">'
     +'<div class="tip">只影响「商户」页的绿灯/红灯判断，不限制记录。</div>'
     +'<label>概览卡片排序</label>'
     +'<select onchange="setCardSort(this.value)">'
@@ -543,10 +564,10 @@ function addPerson(){const v=document.getElementById('npName').value.trim();if(!
   S.people.push({id:uid(),name:v});save();renderAll();}
 function delPerson(id){
   const n=S.cards.filter(c=>c.personId===id).length;
-  if(!confirm(n?'此人名下 '+n+' 张卡将一并删除，确定？':'删除这个持卡人？'))return;
-  S.cards.filter(c=>c.personId===id).forEach(c=>S.txns=S.txns.filter(t=>t.cardId!==c.id));
-  S.cards=S.cards.filter(c=>c.personId!==id);
-  S.people=S.people.filter(p=>p.id!==id); save(); renderAll();
+  if(!confirm(n?'此人名下 '+n+' 张卡及其全部消费、还款记录将一并删除，确定？':'删除这个持卡人？'))return;
+  const o=CardCycleCore.removePerson(S.people,S.cards,S.txns,S.payments,id);
+  S.people=o.people; S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
+  save(); renderAll();
 }
 function addTerm(){const v=document.getElementById('ntName').value.trim();if(!v)return;
   S.terminals.push({id:uid(),name:v,note:''});save();renderAll();}
@@ -554,9 +575,13 @@ function delTerm(id){if(!confirm('删除这个商户？'))return;
   S.terminals=S.terminals.filter(t=>t.id!==id);save();renderAll();}
 function delCard(id){
   const n=S.txns.filter(t=>t.cardId===id).length;
-  if(!confirm('删除这张卡'+(n?'及其 '+n+' 条记录':'')+'？'))return;
-  S.txns=S.txns.filter(t=>t.cardId!==id);
-  S.cards=S.cards.filter(c=>c.id!==id);save();renderAll();
+  const m=S.payments.filter(p=>p.cardId===id).length;
+  const what=[n?n+' 条消费':'',m?m+' 条还款':''].filter(Boolean).join('、');
+  if(!confirm('删除这张卡'+(what?'及其 '+what+'记录':'')+'？'))return;
+  // 消费和还款必须一起删：只删消费会留下孤儿还款，流水汇总会凭空多出存款
+  const o=CardCycleCore.removeCard(S.cards,S.txns,S.payments,id);
+  S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
+  save();renderAll();
 }
 function setBuffer(v){S.settings.buffer=Math.max(0,Math.min(10,+v||0));save();renderAll();}
 function setGap(v){S.settings.minGap=Math.max(0,Math.min(60,+v||0));save();renderAll();}
@@ -583,7 +608,7 @@ document.getElementById('mask').addEventListener('click',e=>{if(e.target.id==='m
 function openCard(id){
   if(isMulti() && !S.people.length){alert('请先添加一个持卡人。');return;}
   const c=id?cardById(id):null;
-  const b=c?bufOf(c):(S.settings.buffer||3);
+  const b=c?bufOf(c):(S.settings.buffer==null?3:S.settings.buffer);
   showModal('<h3>'+(c?'编辑信用卡':'添加信用卡')+'</h3>'
     +(isMulti()
       ? '<label>持卡人</label><select id="fPerson">'
@@ -779,6 +804,7 @@ function applyImport(txt){
   if(!d || !Array.isArray(d.cards)){ alert('这段数据里没有信用卡信息，可能不是本工具的备份。'); return false; }
   if(!confirm('将导入 '+d.cards.length+' 张卡、'+(d.txns||[]).length+' 条记录，覆盖当前数据。确定？')) return false;
   S=normalize(d);                                    // 旧版备份自动迁移成消费+还款两本账
+  loadFailed=false;                                  // 导入是用户明确的覆盖动作，也是读失败后的恢复手段
   if(S.people.length>1) S.settings.multiUser=true;   // 多人备份自动进多人模式
   save(); closeModal(); go('dash');
   alert('导入成功。'); return true;
@@ -794,7 +820,7 @@ function wipe(){
   if(!confirm('将删除本机的 '+S.cards.length+' 张信用卡、'+S.terminals.length+' 个商户、'
     +S.txns.length+' 条消费记录，无法恢复。建议先导出备份。确定清空？'))return;
   if(!confirm('再确认一次：数据清空后无法找回，真的要清空？'))return;
-  S=structuredClone(DEF);save();renderAll();
+  S=structuredClone(DEF);loadFailed=false;save();renderAll();   // 清空是用户明确的动作，不受读失败拦截
 }
 
 /* =====================================================================

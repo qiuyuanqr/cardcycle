@@ -300,6 +300,76 @@ test('recent 排序：欠款卡在前 → 无欠款但有流水 → 从未操作
   assert.deepStrictEqual(views.map(v => v.id), ['中信', '广州', '光大', '广发', '浦发']);
 });
 
+/* ---- 流水排序（与概览「最近变动」同口径） -------------------- */
+
+test('txnCmp：日期倒序优先，同一天按记账时刻倒序，老记录沉在同日之后', () => {
+  const T = d => C.pd(d).getTime();
+  const rows = [
+    { id: 'r1', date: '2026-07-20', ts: T('2026-07-20') + 9e6 },  // 更早的日期，哪怕记账时刻很晚
+    { id: 'r2', date: '2026-07-27' },                             // 老记录，无 ts
+    { id: 'r3', date: '2026-07-27', ts: T('2026-07-27') + 1000 },
+    { id: 'r4', date: '2026-07-27', ts: T('2026-07-27') + 5000 },
+  ];
+  rows.sort(C.txnCmp);
+  assert.deepStrictEqual(rows.map(r => r.id), ['r4', 'r3', 'r2', 'r1']);
+  // 同日、同为老记录：顺序必须稳定可复现（不能随 id 随机跳动）
+  const old = [{ id: 'b', date: '2026-07-27' }, { id: 'a', date: '2026-07-27' }];
+  assert.deepStrictEqual(old.slice().sort(C.txnCmp).map(r => r.id),
+                         old.slice().reverse().sort(C.txnCmp).map(r => r.id));
+});
+
+/* ---- 删卡/删人的级联清理 ------------------------------------- */
+
+test('removeCard：删卡连消费与还款一起删，别的卡分毫不动', () => {
+  const cards = [{ id: 'cA' }, { id: 'cB' }];
+  const txns = [{ id: 't1', cardId: 'cA' }, { id: 't2', cardId: 'cB' }];
+  const pays = [{ id: 'p1', cardId: 'cA' }, { id: 'p2', cardId: 'cB' }];
+  const r = C.removeCard(cards, txns, pays, 'cA');
+  assert.deepStrictEqual(r.cards.map(c => c.id), ['cB']);
+  assert.deepStrictEqual(r.txns.map(t => t.id), ['t2']);
+  assert.deepStrictEqual(r.payments.map(p => p.id), ['p2'], '还款不能留成孤儿');
+  assert.strictEqual(txns.length, 2, '纯函数：不改传入数组');
+  assert.strictEqual(pays.length, 2);
+});
+
+test('removePerson：名下所有卡连同两本流水一起删', () => {
+  const people = [{ id: 'me' }, { id: 'lz' }];
+  const cards = [{ id: 'cA', personId: 'me' }, { id: 'cB', personId: 'lz' }, { id: 'cC', personId: 'me' }];
+  const txns = [{ id: 't1', cardId: 'cA' }, { id: 't2', cardId: 'cB' }, { id: 't3', cardId: 'cC' }];
+  const pays = [{ id: 'p1', cardId: 'cC' }, { id: 'p2', cardId: 'cB' }];
+  const r = C.removePerson(people, cards, txns, pays, 'me');
+  assert.deepStrictEqual(r.people.map(p => p.id), ['lz']);
+  assert.deepStrictEqual(r.cards.map(c => c.id), ['cB']);
+  assert.deepStrictEqual(r.txns.map(t => t.id), ['t2']);
+  assert.deepStrictEqual(r.payments.map(p => p.id), ['p2']);
+});
+
+test('pruneOrphans：清掉指向已删卡的流水；一张卡都没有时绝不动手', () => {
+  const cards = [{ id: 'cB' }];
+  const txns = [{ id: 't1', cardId: 'cA' }, { id: 't2', cardId: 'cB' }];
+  const pays = [{ id: 'p1', cardId: 'cA' }, { id: 'p2', cardId: 'cB' }];
+  const r = C.pruneOrphans(cards, txns, pays);
+  assert.deepStrictEqual(r.txns.map(t => t.id), ['t2']);
+  assert.deepStrictEqual(r.payments.map(p => p.id), ['p2']);
+  assert.strictEqual(r.removed, 2);
+  // ★ 安全阀：cards 为空可能是读取异常而非「真的一张卡都没有」，
+  //   此时若按孤儿清理会把全部流水删光——必须原样返回。
+  const safe = C.pruneOrphans([], txns, pays);
+  assert.strictEqual(safe.txns.length, 2, '没有卡时不许删流水');
+  assert.strictEqual(safe.payments.length, 2);
+  assert.strictEqual(safe.removed, 0);
+});
+
+/* ---- 提前天数：0 是合法值，不能被当成「没填」 ---------------- */
+
+test('bufOf：0 天必须生效，不能回落成默认 3', () => {
+  assert.strictEqual(C.bufOf({ buffer: 0 }, { buffer: 5 }), 0, '卡上设 0 天');
+  assert.strictEqual(C.bufOf({}, { buffer: 0 }), 0, '全局默认设 0 天');
+  assert.strictEqual(C.bufOf({}, { buffer: 4 }), 4);
+  assert.strictEqual(C.bufOf({}, {}), 3, '真没设才用 3');
+  assert.strictEqual(C.bufOf({}, null), 3);
+});
+
 test('pruneSeedTerminals：清理旧版占位商户，真实商户绝不动', () => {
   const mk = (id, name, note) => ({ id, name, note: note || '' });
   // 全是没用过的旧占位 → 清空并补默认「老张便利店」

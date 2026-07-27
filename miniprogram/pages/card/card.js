@@ -64,7 +64,11 @@ Page({
     };
     if (this.id) Object.assign(store.cardById(S, this.id), data);
     else S.cards.push(Object.assign({ id: store.uid() }, data));
-    store.save(S);
+    if (!store.save(S)) {
+      wx.showModal({ title: '没能保存', showCancel: false,
+        content: '这张卡没有写入本机存储，请退出小程序重新进入后再试。' });
+      return;
+    }
     wx.showToast({ title: '已保存', icon: 'success' });
     setTimeout(() => wx.navigateBack(), 600);
   },
@@ -72,14 +76,17 @@ Page({
   delCard() {
     const S = this.S;
     const n = S.txns.filter(t => t.cardId === this.id).length;
+    const m = S.payments.filter(p => p.cardId === this.id).length;
+    const what = [n ? n + ' 条消费' : '', m ? m + ' 条还款' : ''].filter(Boolean).join('、');
     wx.showModal({
       title: '删除这张卡',
-      content: n ? '将同时删除它的 ' + n + ' 条刷卡记录。' : '确定删除？',
+      content: what ? '将同时删除它的 ' + what + '记录。' : '确定删除？',
       confirmColor: '#e0384a',
       success: r => {
         if (!r.confirm) return;
-        S.txns = S.txns.filter(t => t.cardId !== this.id);
-        S.cards = S.cards.filter(c => c.id !== this.id);
+        // 消费和还款必须一起删：只删消费会留下孤儿还款，流水汇总会凭空多出存款
+        const out = Core.removeCard(S.cards, S.txns, S.payments, this.id);
+        S.cards = out.cards; S.txns = out.txns; S.payments = out.payments;
         store.save(S);
         wx.navigateBack();
       }

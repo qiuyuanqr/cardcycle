@@ -14,8 +14,11 @@ Page({
     this.S = S;
     this.filterIds = [''].concat(S.cards.map(c => c.id));
     const names = ['全部信用卡'].concat(S.cards.map(c => store.cardLabel(c)));
-    let idx = this.data.filterIdx;
-    if (idx >= this.filterIds.length) idx = 0;
+    // 记住的是卡 id 而不是下标：删掉中间某张卡后，同一个下标会指到另一张卡上；
+    // 选中的卡本身被删了就回落到「全部」。
+    let idx = this.filterIds.indexOf(this.fid || '');
+    if (idx < 0) idx = 0;
+    this.fid = this.filterIds[idx];
     this.setData({ filterNames: names, filterIdx: idx });
     this.build(idx);
   },
@@ -28,14 +31,14 @@ Page({
     const pays = S.payments.filter(p => !fid || p.cardId === fid);
     const rows = txs.map(t => {
         const tm = store.termById(S, t.terminalId);
-        return { kind: 'tx', id: t.id, date: t.date, amt: Core.money(t.amount),
+        return { kind: 'tx', id: t.id, date: t.date, ts: t.ts, amt: Core.money(t.amount),
                  sub: [cardSub(store.cardById(S, t.cardId)),
                        tm ? tm.name : '未记商户', t.note].filter(Boolean).join(' · ') };
       })
-      .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date,
+      .concat(pays.map(p => ({ kind: 'pay', id: p.id, date: p.date, ts: p.ts,
                                amt: Core.money(p.amount),
                                sub: cardSub(store.cardById(S, p.cardId)) })))
-      .sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+      .sort(Core.txnCmp);   // 同一天按记账时刻倒序，与概览「最近变动」同口径
     const tot = txs.reduce((s, t) => s + t.amount, 0);
     const paid = pays.reduce((s, p) => s + p.amount, 0);
     const owe = Math.max(0, Math.round((tot - paid) * 100) / 100);
@@ -51,6 +54,7 @@ Page({
 
   onFilter(e) {
     const idx = +e.detail.value;
+    this.fid = this.filterIds[idx] || '';
     this.setData({ filterIdx: idx });
     this.build(idx);
   },

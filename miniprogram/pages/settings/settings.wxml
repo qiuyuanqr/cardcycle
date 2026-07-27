@@ -65,6 +65,23 @@
     </view>
   </view>
 
+  <view class="sec">本机存储</view>
+  <view class="card">
+    <view wx:if="{{env.readFailed}}" class="tip c-bad" style="margin-top:0">
+      这次没能读出本机数据——数据没有丢，也没有被覆盖。请退出小程序重新进入；
+      在恢复之前不要记账、不要备份。
+    </view>
+    <view class="kv"><text class="k">当前环境</text><text class="v">{{env.envName}}</text></view>
+    <view class="kv"><text class="k">本环境数据</text>
+      <text class="v">{{env.cards}} 张卡 · {{env.txns}} 笔消费 · {{env.payments}} 笔还款</text></view>
+    <view wx:if="{{env.sizeText}}" class="kv"><text class="k">占用</text><text class="v">{{env.sizeText}}</text></view>
+    <view wx:if="{{env.isolated}}" class="tip">
+      开发版（预览码）、体验版（体验码）、正式版是<text style="font-weight:600">三个互相隔离的存储空间</text>，
+      各自的数据看不见对方。「扫码进去数据有时有、有时没有」通常就是这个原因：
+      认准同一个二维码进入，或者用下面的「复制备份 / 从剪贴板导入」把数据搬过去。
+    </view>
+  </view>
+
   <view class="sec">数据备份</view>
   <view class="card">
     <view class="tip" style="margin-top:0">

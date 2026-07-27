@@ -62,8 +62,11 @@
 
   /* ---------- 周期计算 ---------- */
   // 该卡的还款提前天数（卡未单独设置时用全局默认）
+  // 0 是合法值（账单日当天才还），只有真的没设过才回落到 3——不能用 || 判空
   function bufOf(card, settings) {
-    return card.buffer == null ? ((settings && settings.buffer) || 3) : card.buffer;
+    if (card && card.buffer != null) return card.buffer;
+    const b = settings && settings.buffer;
+    return b == null ? 3 : b;
   }
 
   /**
@@ -203,6 +206,60 @@
   /* 「最近变动」比较器：档位升序，档内按记账时刻倒序（档 2 全为 0，稳定排序保持原顺序） */
   function recentCmp(a, b) { return a.band - b.band || b.actTs - a.actTs; }
 
+  /**
+   * 流水列表比较器（消费与还款混排）：
+   * 日期倒序是第一位——用户找账先看哪天；同一天内再按记账时刻 ts 倒序，
+   * 口径与概览的「最近变动」一致（老记录没有 ts，退回当天 0 点，排在同日新记录之后）。
+   * 全都打平时按 id 兜底，保证同一份数据每次渲染顺序都一样。
+   */
+  function txnCmp(a, b) {
+    return String(b.date).localeCompare(String(a.date))
+        || (b.ts || pd(b.date).getTime()) - (a.ts || pd(a.date).getTime())
+        || String(b.id).localeCompare(String(a.id));
+  }
+
+  /* ---------- 删除时的级联清理 ---------- */
+  /**
+   * 删一张卡：它的消费和还款必须一起走。
+   * 2.2 以前只删了消费，还款留成孤儿——概览按 cardId 过滤看不出来，
+   * 但流水页「全部信用卡」的汇总会把这笔还款算进去，凭空多出存款。
+   * 纯函数：不修改传入数组。
+   */
+  function removeCard(cards, txns, payments, cardId) {
+    return {
+      cards:    (cards || []).filter(c => c.id !== cardId),
+      txns:     (txns || []).filter(t => t.cardId !== cardId),
+      payments: (payments || []).filter(p => p.cardId !== cardId)
+    };
+  }
+
+  /** 删一个持卡人：名下所有卡连同两本流水一起删。纯函数。 */
+  function removePerson(people, cards, txns, payments, personId) {
+    const gone = new Set((cards || []).filter(c => c.personId === personId).map(c => c.id));
+    return {
+      people:   (people || []).filter(p => p.id !== personId),
+      cards:    (cards || []).filter(c => c.personId !== personId),
+      txns:     (txns || []).filter(t => !gone.has(t.cardId)),
+      payments: (payments || []).filter(p => !gone.has(p.cardId))
+    };
+  }
+
+  /**
+   * 清理指向已删卡片的流水（老版本删卡留下的孤儿，导入老备份时一并自愈）。
+   * ★ 安全阀：一张卡都没有时原样返回。cards 为空既可能是「真的没卡」，
+   *   也可能是读取异常拿到了空壳——后者若按孤儿清理，会把全部流水删光。
+   *   宁可留着孤儿，也不能让一次读取异常升级成数据全毁。
+   * 纯函数：不修改传入数组。
+   */
+  function pruneOrphans(cards, txns, payments) {
+    const t0 = txns || [], p0 = payments || [];
+    if (!(cards || []).length) return { txns: t0.slice(), payments: p0.slice(), removed: 0 };
+    const live = new Set(cards.map(c => c.id));
+    const t = t0.filter(x => live.has(x.cardId));
+    const p = p0.filter(x => live.has(x.cardId));
+    return { txns: t, payments: p, removed: (t0.length - t.length) + (p0.length - p.length) };
+  }
+
   /* ---------- 日历（ICS）生成 ---------- */
   const icsEsc = s => String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;')
                                .replace(/,/g, '\\,').replace(/\n/g, '\\n');
@@ -312,6 +369,7 @@
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
            money, bufOf, calc, migrateRepaid, pruneSeedTerminals,
-           lastActTs, recentBand, recentCmp,
+           lastActTs, recentBand, recentCmp, txnCmp,
+           removeCard, removePerson, pruneOrphans,
            buildReminders, buildICS, icsFold, utf8Len };
 }));

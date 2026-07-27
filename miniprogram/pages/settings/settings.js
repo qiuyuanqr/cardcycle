@@ -8,7 +8,8 @@ Page({
   data: {
     cards: [], terms: [], buffer: 3, minGap: 7, lastBackup: null, newTerm: '',
     sortNames: ['按紧急程度（默认）', '按最近变动', '自定义顺序'], sortIdx: 0, custom: false,
-    styleNames: ['平铺按钮（默认）', '下拉列表'], styleIdx: 0
+    styleNames: ['平铺按钮（默认）', '下拉列表'], styleIdx: 0,
+    env: null
   },
 
   onShow() { this.refresh(); },
@@ -34,9 +35,10 @@ Page({
         id: t.id, name: t.name,
         sub: S.txns.filter(x => x.terminalId === t.id).length + ' 笔记录'
       })),
-      buffer: S.settings.buffer || 3,
-      minGap: S.settings.minGap || 7,
+      buffer: S.settings.buffer == null ? 3 : S.settings.buffer,   // 0 是合法值，别被 || 吞掉
+      minGap: S.settings.minGap == null ? 7 : S.settings.minGap,
       lastBackup: S.settings.lastBackup,
+      env: store.storageEnv(S),
       sortIdx: Math.max(0, SORT_KEYS.indexOf(mode)),
       custom: mode === 'custom',
       styleIdx: Math.max(0, STYLE_KEYS.indexOf(S.settings.swipeStyle || 'chips'))
@@ -131,6 +133,11 @@ Page({
   /* ---- 备份 ---- */
   exportJSON() {
     const S = this.S;
+    if (S.readFailed) {   // 读不到数据时导出的是空壳，会把好备份覆盖掉
+      wx.showModal({ title: '现在不能备份', showCancel: false,
+        content: '这次没能读出本机数据，导出的会是空的。请退出小程序重新进入后再备份。' });
+      return;
+    }
     wx.setClipboardData({
       data: JSON.stringify(S),
       success: () => {
@@ -159,8 +166,9 @@ Page({
                  + ' 条记录，覆盖当前全部数据。确定？',
           success: r => {
             if (!r.confirm) return;
-            const S = Object.assign(JSON.parse(JSON.stringify(store.DEF)), d);
-            S.settings = Object.assign(JSON.parse(JSON.stringify(store.DEF.settings)), d.settings || {});
+            // 必须走 normalize：2.2 以前的备份没有 payments、只有逐笔 repaid 标记，
+            // 不迁移就等于把已还的钱全变回待还，而且存盘后再也没有补救机会。
+            const S = store.normalize(d);
             store.save(S);
             this.refresh();
             wx.showToast({ title: '导入成功', icon: 'success' });

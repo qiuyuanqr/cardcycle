@@ -61,7 +61,12 @@ Page({
         date: d.date || d.todayStr, amount: amt,
         note: (d.note || '').trim(), ts: Date.now()
       });
-      store.save(S);
+      if (!store.save(S)) {       // 存储读失败/写失败时，不能报「已记录」骗用户
+        S.txns.pop();
+        wx.showModal({ title: '没能保存', showCancel: false,
+          content: '这笔消费没有写入本机存储，请退出小程序重新进入后再记一次。' });
+        return;
+      }
       wx.showToast({ title: '已记录', icon: 'success' });
       setTimeout(() => wx.navigateBack(), 600);
     };

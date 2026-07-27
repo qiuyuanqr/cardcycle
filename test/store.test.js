@@ -1,0 +1,127 @@
+/* 小程序存储层测试（miniprogram/utils/store.js）
+   这一层管的是「数据能不能活下来」——比界面更要命，所以单独一套。
+   node 里没有 wx，用下面的假 wx 顶上：它模拟真机上的两个关键行为
+     · key 不存在时 getStorageSync 返回空字符串（不是抛异常）
+     · 读写都可能抛异常（存储忙、内容损坏、超限）
+   运行：node --test test/ */
+const { test } = require('node:test');
+const assert = require('node:assert');
+const C = require('../core.js');
+const store = require('../miniprogram/utils/store.js');
+
+/* 假 wx：box.data === undefined 表示这个 key 还没写过 */
+function mockWx(initial, opts) {
+  opts = opts || {};
+  const box = { data: initial, toasts: [] };
+  global.wx = {
+    getStorageSync() {
+      if (opts.readThrows) throw new Error('storage read failed');
+      return box.data === undefined ? '' : JSON.parse(JSON.stringify(box.data));
+    },
+    setStorageSync(k, v) {
+      if (opts.writeThrows) throw new Error('storage write failed');
+      box.data = JSON.parse(JSON.stringify(v));
+    },
+    showToast(o) { box.toasts.push(o && o.title); },
+    showModal() {},
+    getAccountInfoSync() { return { miniProgram: { envVersion: 'trial' } }; }
+  };
+  return box;
+}
+
+const REAL = () => ({
+  people: [{ id: 'me', name: '我' }],
+  cards: [{ id: 'cA', bank: '广发', last4: '1234', statementDay: 10, buffer: 3 }],
+  terminals: [{ id: 'm1', name: '老张便利店', note: '' }],
+  txns: [{ id: 't1', cardId: 'cA', date: '2026-07-20', amount: 800, ts: 1 }],
+  payments: [{ id: 'p1', cardId: 'cA', date: '2026-07-21', amount: 500, ts: 2 }],
+  settings: { buffer: 3, minGap: 7, lastBackup: '2026-07-20' }
+});
+
+/* ---------- 读取失败：绝不能把用户数据洗掉 ---------- */
+
+test('load：读取失败时不写种子、不覆盖，盘上数据原样保留', () => {
+  const box = mockWx(REAL(), { readThrows: true });
+  const S = store.load();
+  assert.deepStrictEqual(box.data, REAL(), '★ 存储内容必须一个字节都没动');
+  assert.strictEqual(S.readFailed, true, '状态要标记读失败，供上层判断');
+  assert.strictEqual(S.cards.length, 0, '读不到就是读不到，不能假装有数据');
+});
+
+test('save：读失败得到的空状态禁止写回（否则一次读失败＝永久丢数据）', () => {
+  const box = mockWx(REAL(), { readThrows: true });
+  const S = store.load();
+  S.txns.push({ id: 'tX', cardId: 'cA', date: '2026-07-27', amount: 1 });
+  const ok = store.save(S);
+  assert.strictEqual(ok, false, 'save 必须拒绝');
+  assert.deepStrictEqual(box.data, REAL(), '★ 盘上仍是真数据，重启即可恢复');
+});
+
+test('load：读到空（真·首次启动）才种默认商户并写盘', () => {
+  const box = mockWx(undefined);
+  const S = store.load();
+  assert.deepStrictEqual(S.terminals.map(t => t.name), ['老张便利店']);
+  assert.strictEqual(S.people.length, 1);
+  assert.ok(box.data, '首启要写盘');
+  assert.notStrictEqual(S.readFailed, true);
+});
+
+test('load：正常读取时按 normalize 处理，不丢流水', () => {
+  mockWx(REAL());
+  const S = store.load();
+  assert.strictEqual(S.txns.length, 1);
+  assert.strictEqual(S.payments.length, 1);
+  assert.strictEqual(S.settings.lastBackup, '2026-07-20');
+});
+
+/* ---------- 导入旧备份：还款不能凭空消失 ---------- */
+
+const OLD_BACKUP = () => ({   // 2.2 以前的格式：没有 payments，逐笔 repaid
+  people: [{ id: 'me', name: '我' }],
+  cards: [{ id: 'cA', bank: '广发', last4: '1234', statementDay: 10, buffer: 3 }],
+  terminals: [{ id: 'm1', name: '商户 A', note: '' }],
+  txns: [
+    { id: 't1', cardId: 'cA', date: '2026-06-20', amount: 800, repaid: true, repaidDate: '2026-06-25' },
+    { id: 't2', cardId: 'cA', date: '2026-07-20', amount: 300 }
+  ],
+  settings: { buffer: 3, minGap: 7 }
+});
+
+test('normalize：旧备份的 repaid 标记迁移成还款流水，金额守恒', () => {
+  mockWx(undefined);
+  const S = store.normalize(OLD_BACKUP());
+  assert.strictEqual(S.payments.length, 1, '★ 已还的 800 必须变成一条还款');
+  assert.strictEqual(S.payments[0].amount, 800);
+  assert.strictEqual(S.payments[0].date, '2026-06-25', '还款日期取 repaidDate');
+  assert.ok(S.txns.every(t => t.repaid === undefined), '旧标记要清掉');
+  const k = C.calc(S.cards[0], S.txns, S.payments, S.settings, C.pd('2026-07-27'));
+  assert.strictEqual(k.over, 0, '已还的那笔不该再算成已出账单未还');
+  assert.strictEqual(k.cur, 300);
+});
+
+test('normalize：不是对象的存储内容不许被当成数据展开', () => {
+  mockWx(undefined);
+  for (const junk of ['{"cards":[]}', 42, null, undefined, []]) {
+    const S = store.normalize(junk);
+    assert.ok(Array.isArray(S.cards) && Array.isArray(S.txns) && Array.isArray(S.payments),
+              '至少要是一份结构完整的空数据：' + JSON.stringify(junk));
+  }
+});
+
+/* ---------- 删卡级联（store 层接线是否真的接上了 core） ---------- */
+
+test('removeCard 经 store 走一遍：还款不留孤儿，汇总不再算错', () => {
+  mockWx(REAL());
+  const S = store.load();
+  const r = C.removeCard(S.cards, S.txns, S.payments, 'cA');
+  assert.strictEqual(r.payments.length, 0, '删卡后该卡的还款必须一起走');
+  assert.strictEqual(r.txns.length, 0);
+});
+
+test('normalize：历史遗留的孤儿还款（老版本删卡留下的）自动清掉', () => {
+  mockWx(undefined);
+  const d = REAL();
+  d.payments.push({ id: 'pGhost', cardId: 'cGone', date: '2026-07-01', amount: 999 });
+  const S = store.normalize(d);
+  assert.deepStrictEqual(S.payments.map(p => p.id), ['p1'], '指向已删卡的还款不该留在账上');
+});
