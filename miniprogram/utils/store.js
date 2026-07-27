@@ -81,10 +81,7 @@ function cardView(S, c) {
     rank: RANK[k.st], toDue: k.toDue
   };
   if (k.st === 'idle') {
-    // 存款（还款超出消费的部分）：下次消费自动抵扣
-    const tot = S.txns.filter(t => t.cardId === c.id).reduce((s, t) => s + t.amount, 0);
-    const paid = S.payments.filter(p => p.cardId === c.id).reduce((s, p) => s + p.amount, 0);
-    const dep = Math.max(0, Math.round((paid - tot) * 100) / 100);
+    const dep = k.deposit;   // 存款（还款超出消费的部分）：下次消费自动抵扣
     v.idleLine = (dep > 0 ? '存款 ¥' + Core.money(dep) + ' 自动抵扣 · ' : '')
       + (k.toDue <= 0
           ? '窗口已过 · ' + Core.md(Core.addD(k.anchor, 1)) + ' 起再刷'
@@ -209,21 +206,24 @@ function repayInfo(S, cardId) {
   return { label: cardLabel(c), owed, owedText: Core.money(owed) };
 }
 
-/* 登记还款：记一条独立的还款流水（多还时按待还封顶）。
+/* 登记还款：记一条独立的还款流水，还多少记多少；
+   超出待还的部分自然成为存款，下次消费自动抵扣。
    raw 为用户输入，空串按全额算。成功返回 true，供页面关弹窗并刷新。 */
 function applyRepay(S, cardId, raw) {
   const info = repayInfo(S, cardId);
   if (!info) return false;
   const amt = (raw || '').trim() ? parseFloat(raw) : info.owed;
   if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return false; }
-  const rec = Math.min(Math.round(amt * 100), Math.round(info.owed * 100)) / 100;
+  const rec = Math.round(amt * 100) / 100;
   S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec });
   save(S);
-  if (amt > info.owed)
-    wx.showModal({ title: '已按 ¥' + Core.money(rec) + ' 登记', showCancel: false,
-      content: '待还只有这么多。' });
-  else
+  if (rec > info.owed) {
+    const dep = Math.round((rec - info.owed) * 100) / 100;
+    wx.showModal({ title: '已登记还款 ¥' + Core.money(rec), showCancel: false,
+      content: '其中 ¥' + Core.money(dep) + ' 超出待还，记为存款，下次消费自动抵扣。' });
+  } else {
     wx.showToast({ title: '已登记还款', icon: 'success' });
+  }
   return true;
 }
 

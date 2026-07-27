@@ -314,10 +314,7 @@ function cardHTML(c,k){
   // 本期没刷过的卡收成一行，避免 7 张卡把概览页撑得太长
   if(k.st==='idle'){
     const soon=k.toDue<=0;   // 已过安全窗口：现在刷会计入即将出的账单
-    // 存款（还款超出消费的部分）：下次消费自动抵扣
-    const tot=S.txns.filter(t=>t.cardId===c.id).reduce((s,t)=>s+t.amount,0);
-    const paid=S.payments.filter(p=>p.cardId===c.id).reduce((s,p)=>s+p.amount,0);
-    const dep=Math.max(0,Math.round((paid-tot)*100)/100);
+    const dep=k.deposit;     // 存款（还款超出消费的部分）：下次消费自动抵扣
     const line = (dep>0?'存款 ¥'+money(dep)+' 自动抵扣 · ':'')
       + (soon ? '窗口已过 · '+md(addD(k.anchor,1))+' 起再刷'
               : '可刷至 '+md(addD(k.due,-1))+' · '+md(k.due)+' 前还清');
@@ -699,7 +696,8 @@ function openRepay(cid){
   showModal('<h3>登记还款</h3><div class="hint">'+esc(cardLabel(c))+' · 待还 ¥'+money(owed)+'</div>'
     +'<label>这次还了多少</label>'
     +'<input id="rAmt" type="number" step="0.01" inputmode="decimal" value="'+owed+'">'
-    +'<div class="hint">默认全额。不用管还的是哪一笔：还款记成独立的一条流水，待还金额 = 消费总额 − 还款总额。</div>'
+    +'<div class="hint">默认全额。不用管还的是哪一笔：还款记成独立的一条流水，待还金额 = 消费总额 − 还款总额。'
+    +'还多少记多少，超出待还的部分是存款，下次消费自动抵扣。</div>'
     +'<div class="macts"><button class="btn ghost" onclick="closeModal()">关闭</button>'
     +'<button class="btn" onclick="doRepay(\''+cid+'\')">登记还款</button></div>');
 }
@@ -708,10 +706,11 @@ function doRepay(cid){
   if(!(v>0)){alert('请填写还款金额');return;}
   const c=cardById(cid),k=calc(c);
   const owed=Math.round((k.cur+k.over)*100)/100;
-  const amt=Math.min(Math.round(v*100)/100,owed);
+  const amt=Math.round(v*100)/100;   // 还多少记多少，超出部分是存款
   S.payments.push({id:uid(),cardId:cid,date:fd(today()),amount:amt});
   save();closeModal();renderAll();
-  if(v>owed) alert('待还只有 ¥'+money(owed)+'，已按 ¥'+money(owed)+' 登记。');
+  if(amt>owed) alert('已登记还款 ¥'+money(amt)+'，其中 ¥'+money(Math.round((amt-owed)*100)/100)
+    +' 超出待还，记为存款，下次消费自动抵扣。');
 }
 
 /* =====================================================================

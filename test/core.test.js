@@ -130,8 +130,19 @@ test('calc：还款按时间先后冲抵，不对应具体消费', () => {
   k = C.calc(card, txns, pay(250), SETTINGS, ref);       // 冲完最早的，再冲本期一部分
   assert.strictEqual(k.over, 0); assert.strictEqual(k.cur, 50);
 
-  k = C.calc(card, txns, pay(9999), SETTINGS, ref);      // 多还：全部冲清
+  k = C.calc(card, txns, pay(9999), SETTINGS, ref);      // 多还：全部冲清，剩余是存款
   assert.strictEqual(k.cur + k.over, 0); assert.strictEqual(k.st, 'idle');
+  assert.strictEqual(k.deposit, 9999 - 300, '超出全部消费的部分记为存款');
+  assert.strictEqual(k.label, '已还清', '本期刷过又还清 ≠ 本期未刷');
+
+  k = C.calc(card, txns, pay(250), SETTINGS, ref);       // 没还够时没有存款
+  assert.strictEqual(k.deposit, 0);
+
+  // 只有上期消费、已还清：本期确实没刷过
+  k = C.calc(card, [{ id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100 }],
+             pay(100), SETTINGS, ref);
+  assert.strictEqual(k.label, '本期未刷');
+  assert.strictEqual(k.deposit, 0);
 
   // 他卡的还款不影响本卡
   k = C.calc(card, txns, [{ id: 'p2', cardId: 'c2', date: '2026-07-26', amount: 300 }], SETTINGS, ref);

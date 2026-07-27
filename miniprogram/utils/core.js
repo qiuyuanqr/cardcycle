@@ -76,8 +76,9 @@
    * @param payments 全部还款 [{id, cardId, date:'YYYY-MM-DD', amount}]
    * @param settings {buffer}
    * @param ref      参考日（默认今天）
-   * @returns {anchor,prevA,winStart,due,cur,curN,over,overN,toDue,toAnchor,st,label,hint,pct}
+   * @returns {anchor,prevA,winStart,due,cur,curN,over,overN,deposit,toDue,toAnchor,st,label,hint,pct}
    *   st: bad | hot | warn | ok | idle
+   *   deposit: 存款（还款超出全部消费的部分），下次消费自动抵扣
    */
   function calc(card, txns, payments, settings, ref) {
     ref = ref || today();
@@ -94,16 +95,18 @@
     for (const p of (payments || []))
       if (p.cardId === card.id) credit += Math.round(p.amount * 100);
 
-    let cur = 0, curN = 0, over = 0, overN = 0;
+    let cur = 0, curN = 0, over = 0, overN = 0, curAll = 0;  // curAll：本期消费总额（含已冲抵）
     for (const t of charges) {
       let amt = Math.round(t.amount * 100);
+      const k = fd(nextStmt(card.statementDay, pd(t.date)));
+      if (k === aKey) curAll += amt;
       if (credit >= amt) { credit -= amt; continue; }    // 这笔已被还款冲抵
       amt -= credit; credit = 0;
-      const k = fd(nextStmt(card.statementDay, pd(t.date)));
       if (k === aKey) { cur += amt; curN++; }
       else if (k < aKey) { over += amt; overN++; }
     }
-    cur /= 100; over /= 100;
+    cur /= 100; over /= 100; curAll /= 100;
+    const deposit = credit / 100;                        // 冲抵完全部消费后剩下的钱
 
     const toDue    = diffD(ref, due);
     const toAnchor = diffD(ref, anchor);
@@ -115,7 +118,8 @@
       st = 'bad'; label = '已出账单';
       hint = '有 ' + overN + ' 笔（¥' + money(over) + '）跨过账单日仍未还，这部分已经上了账单。';
     } else if (cur === 0) {
-      st = 'idle'; label = '本期未刷';
+      // 本期刷过但已全部还清 ≠ 本期没刷过，状态要区分开
+      st = 'idle'; label = curAll > 0 ? '已还清' : '本期未刷';
       // 危险时段 = 还款截止日起到账单日：此时刷卡会计入即将出的账单，且已无还款缓冲
       hint = toDue <= 0
         ? '已过本期安全窗口，现在刷会计入 ' + md(anchor) + ' 的账单。等 ' + md(addD(anchor, 1)) + ' 起再刷。'
@@ -133,7 +137,7 @@
       st = 'ok'; label = '周期进行中';
       hint = '还款截止 ' + md(due) + '，账单日 ' + md(anchor) + '。';
     }
-    return { anchor, prevA, winStart, due, cur, curN, over, overN, toDue, toAnchor, st, label, hint,
+    return { anchor, prevA, winStart, due, cur, curN, over, overN, deposit, toDue, toAnchor, st, label, hint,
              pct: total > 0 ? Math.round(gone / total * 100) : 0 };
   }
 
