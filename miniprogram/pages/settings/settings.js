@@ -75,15 +75,33 @@ Page({
   },
 
   /* ---- 参数 ---- */
-  onBuffer(e) {
+  // 这两个输入没有「保存」按钮，失焦即存——必须把最终存了什么反馈出来：
+  // 清空/乱填 → 恢复原值不写盘（以前会静默存成 0）；超范围 → 按上限存并说明；
+  // 写盘失败 → 回滚，不让界面显示一个没存进去的值
+  onBuffer(e) { this.saveParam(e, 'buffer', 15, 3, '提前天数'); },
+  onGap(e) { this.saveParam(e, 'minGap', 60, 7, '间隔'); },
+  saveParam(e, key, max, dft, label) {
     const S = this.S;
-    S.settings.buffer = Math.max(0, Math.min(10, +e.detail.value || 0));
-    store.save(S);
-  },
-  onGap(e) {
-    const S = this.S;
-    S.settings.minGap = Math.max(0, Math.min(60, +e.detail.value || 0));
-    store.save(S);
+    const old = S.settings[key] == null ? dft : S.settings[key];
+    const raw = String(e.detail.value == null ? '' : e.detail.value).trim();
+    const n = raw === '' ? NaN : Math.floor(Number(raw));
+    if (!(n >= 0)) {
+      this.setData({ [key]: old });
+      wx.showToast({ title: '没改，' + label + '仍为 ' + old + ' 天', icon: 'none' });
+      return;
+    }
+    const v = Math.min(max, n);
+    if (v === old) { this.setData({ [key]: v }); return; }   // 值没变就别打扰
+    S.settings[key] = v;
+    if (!store.save(S)) {
+      S.settings[key] = old;
+      this.setData({ [key]: old });
+      wx.showToast({ title: '没能保存，请重进小程序再试', icon: 'none' });
+      return;
+    }
+    this.setData({ [key]: v });
+    if (v < n) wx.showToast({ title: label + '最多 ' + max + ' 天，已按 ' + max + ' 保存', icon: 'none' });
+    else wx.showToast({ title: '已保存 ' + v + ' 天', icon: 'success' });
   },
   onSort(e) {
     const S = this.S;

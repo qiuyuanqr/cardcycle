@@ -179,6 +179,13 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--accent)}
   font-size:13.5px;cursor:pointer;line-height:1.35;border:1.5px solid transparent}
 .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
 .chip small{display:block;font-size:10.5px;opacity:.72;margin-top:1px}
+
+/* 轻提示：参数这类失焦即存的输入，存了什么用它说一声 */
+#toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));
+  transform:translateX(-50%);background:rgba(0,0,0,.78);color:#fff;
+  padding:9px 15px;border-radius:10px;font-size:13.5px;max-width:80vw;
+  opacity:0;pointer-events:none;transition:opacity .2s;z-index:70;white-space:nowrap}
+#toast.show{opacity:1}
 </style>
 </head>
 <body>
@@ -493,7 +500,7 @@ function renderSet(){
     +'<div class="tip" style="margin-top:2px">为朋友代管卡片时开启，界面会出现「持卡人」。<br>默认关闭：只管自己的卡，界面更干净。</div></div>'
     +'<button class="btn sm '+(isMulti()?'':'ghost')+'" onclick="toggleMulti()">'+(isMulti()?'已开启':'已关闭')+'</button></div>'
     +'<label>新卡默认提前天数</label>'
-    +'<input type="number" min="0" max="10" value="'+(S.settings.buffer==null?3:S.settings.buffer)+'" onchange="setBuffer(this.value)">'
+    +'<input type="number" min="0" max="15" value="'+(S.settings.buffer==null?3:S.settings.buffer)+'" onchange="setBuffer(this.value)">'
     +'<div class="tip">只作为添加新卡时的默认值。每张卡都可以单独设置。</div>'
     +'<label>同商户同卡最小间隔（天）</label>'
     +'<input type="number" min="0" max="60" value="'+(S.settings.minGap==null?7:S.settings.minGap)+'" onchange="setGap(this.value)">'
@@ -586,8 +593,26 @@ function delCard(id){
   S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
   save();renderAll();
 }
-function setBuffer(v){S.settings.buffer=Math.max(0,Math.min(10,+v||0));save();renderAll();}
-function setGap(v){S.settings.minGap=Math.max(0,Math.min(60,+v||0));save();renderAll();}
+function toast(t){
+  let el=document.getElementById('toast');
+  if(!el){el=document.createElement('div');el.id='toast';document.body.appendChild(el);}
+  el.textContent=t; el.classList.add('show');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>el.classList.remove('show'),1800);
+}
+// 参数输入失焦即存、没有确认按钮，存了什么必须说一声：
+// 清空/乱填 → 恢复原值不写盘（以前会静默存成 0）；超上限 → 按上限存并说明。
+// 语义与小程序端 settings.saveParam 保持一致
+function setParam(key,max,dft,label,v){
+  const old=S.settings[key]==null?dft:S.settings[key];
+  const n=String(v).trim()===''?NaN:Math.floor(Number(v));
+  if(!(n>=0)){renderAll();toast('没改，'+label+'仍为 '+old+' 天');return;}
+  const val=Math.min(max,n);
+  if(val===old){renderAll();return;}
+  S.settings[key]=val;save();renderAll();
+  toast(val<n?label+'最多 '+max+' 天，已按 '+max+' 保存':'已保存 '+val+' 天');
+}
+function setBuffer(v){setParam('buffer',15,3,'提前天数',v)}
+function setGap(v){setParam('minGap',60,7,'间隔',v)}
 function setCardSort(v){S.settings.cardSort=v;save();renderAll();}
 function setSwipeStyle(v){S.settings.swipeStyle=v;save();renderAll();}
 function moveCard(id,d){
