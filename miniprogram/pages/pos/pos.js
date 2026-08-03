@@ -9,7 +9,7 @@ Page({
   refresh() {
     const S = store.load();
     const t0 = Core.today();
-    const mg = S.settings.minGap || 7;
+    const mg = S.settings.minGap == null ? 7 : S.settings.minGap;   // 0 是合法值，不能用 || 判空
     const mk = Core.fd(t0).slice(0, 7);
 
     const list = S.terminals.map(tm => {

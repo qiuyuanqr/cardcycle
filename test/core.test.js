@@ -155,6 +155,40 @@ test('calc：还款按时间先后冲抵，不对应具体消费', () => {
   assert.strictEqual(k.cur + k.over, 0); assert.strictEqual(k.st, 'idle');
 });
 
+test('calc：未来周期的消费单独计数，不进 cur/over，但仍占用还款额度', () => {
+  const card = { id: 'c1', statementDay: 5, buffer: 3 };
+  const ref = C.pd('2026-07-27');            // 周期 7/6–8/5
+  const txns = [
+    { id: 'a', cardId: 'c1', date: '2026-07-10', amount: 50 },
+    { id: 'typo', cardId: 'c1', date: '2027-01-01', amount: 100 },  // 日期手滑录到未来
+  ];
+  const pay = [{ id: 'p1', cardId: 'c1', date: '2026-07-27', amount: 100 }];
+
+  let k = C.calc(card, txns, [], SETTINGS, ref);
+  assert.strictEqual(k.futN, 1, '未来消费笔数');
+  assert.strictEqual(k.fut, 100, '未来消费金额（原额）');
+  assert.strictEqual(k.cur, 50, '不进本期');
+  assert.strictEqual(k.over, 0, '不进逾期');
+
+  // 现状固化：还款按日期顺序冲抵，未来那笔也占额度——
+  // 本应显示存款 50，被它无声吃掉。界面靠 futN>0 提示用户去流水核对。
+  k = C.calc(card, txns, pay, SETTINGS, ref);
+  assert.strictEqual(k.cur + k.over, 0);
+  assert.strictEqual(k.deposit, 0, '存款被未来消费占用');
+  assert.strictEqual(k.futN, 1);
+
+  // 对照：删掉未来那笔，存款回来
+  k = C.calc(card, [txns[0]], pay, SETTINGS, ref);
+  assert.strictEqual(k.futN, 0);
+  assert.strictEqual(k.fut, 0);
+  assert.strictEqual(k.deposit, 50);
+
+  // 日期在今天之后、但仍在本周期内（8/1 ≤ 账单日 8/5）的不算未来周期
+  k = C.calc(card, [{ id: 'b', cardId: 'c1', date: '2026-08-01', amount: 30 }], [], SETTINGS, ref);
+  assert.strictEqual(k.futN, 0, '本周期内的未来日期不算');
+  assert.strictEqual(k.cur, 30);
+});
+
 test('migrateRepaid：已还标记折算成还款记录、金额守恒、清掉标记', () => {
   const txns = [
     { id: 'a', cardId: 'c1', date: '2026-07-01', amount: 100, repaid: true,  repaidDate: '2026-07-20', terminalId: 't1' },
