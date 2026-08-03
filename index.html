@@ -605,7 +605,7 @@ function toast(t){
 function setParam(key,max,dft,label,v){
   const old=S.settings[key]==null?dft:S.settings[key];
   const n=String(v).trim()===''?NaN:Math.floor(Number(v));
-  if(!(n>=0)){renderAll();toast('没改，'+label+'仍为 '+old+' 天');return;}
+  if(!(n>=0)){renderAll();toast('已恢复为修改前的 '+old+' 天');return;}
   const val=Math.min(max,n);
   if(val===old){renderAll();return;}
   S.settings[key]=val;save();renderAll();

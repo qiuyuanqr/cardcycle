@@ -87,7 +87,7 @@ Page({
     const n = raw === '' ? NaN : Math.floor(Number(raw));
     if (!(n >= 0)) {
       this.setData({ [key]: old });
-      wx.showToast({ title: '没改，' + label + '仍为 ' + old + ' 天', icon: 'none' });
+      wx.showToast({ title: '已恢复为修改前的 ' + old + ' 天', icon: 'none' });
       return;
     }
     const v = Math.min(max, n);
