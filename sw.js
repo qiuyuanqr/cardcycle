@@ -31,21 +31,27 @@ self.addEventListener('fetch', e => {
 
   if (isPage) {
     // 网络优先：拿到新版就更新缓存；断网时回退到缓存
+    // 只缓存 res.ok 的响应：部署间隙的 404/500 错误页一旦写进缓存，
+    // 会顶掉好版本，之后离线打开 PWA 看到的就是错误页
     e.respondWith(
       fetch(req)
         .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+          }
           return res;
         })
         .catch(() => caches.match(req).then(r => r || caches.match('./index.html')))
     );
   } else {
-    // 静态资源：缓存优先
+    // 静态资源：缓存优先（同样只缓存 res.ok 的响应）
     e.respondWith(
       caches.match(req).then(r => r || fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        if (res.ok) {
+          const copy = res.clone();
+          caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
+        }
         return res;
       }))
     );

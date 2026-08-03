@@ -325,6 +325,9 @@ function cardHTML(c,k){
     +'<div class="cc-meta">账单日 '+c.statementDay+' 号 · 提前 '+bufOf(c)+' 天还'
     +(c.limit?' · 额度 ¥'+money(c.limit):'')+'</div></div>'
     +'<div class="pill">'+k.label+'</div></div>';
+  // 日期录到未来周期的消费不进待还、却按顺序占还款额度（存款会无声变少）——必须明示
+  const futWarn=k.futN?'<div class="note alert">有 '+k.futN+' 笔消费（¥'+money(k.fut)
+    +'）日期在未来周期，多半是日期记错。请到「流水」核对，记错的删除后重记。</div>':'';
 
   // 本期没刷过的卡收成一行，避免 7 张卡把概览页撑得太长
   if(k.st==='idle'){
@@ -336,7 +339,7 @@ function cardHTML(c,k){
     return '<div class="card cc s-idle" style="padding-top:13px;padding-bottom:13px">'+head
       +'<div class="row" style="margin-top:10px">'
       +'<div class="grow" style="font-size:12.5px;color:'+(soon?'var(--hot)':'var(--faint)')+'">'+line+'</div>'
-      +'<button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button></div></div>';
+      +'<button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button></div>'+futWarn+'</div>';
   }
 
   const amt=k.cur+k.over;
@@ -346,7 +349,7 @@ function cardHTML(c,k){
     +'<div class="cc-body"><div class="amt">¥'+money(amt)+'<small>待还</small></div>'+cd+'</div>'
     +'<div class="track"><div class="fill" style="width:'+k.pct+'%"></div></div>'
     +'<div class="ticks"><span>'+md(k.winStart)+' 起可刷</span><span>'+md(k.due)+' 前还清</span></div>'
-    +'<div class="note'+(k.st==='bad'?' alert':'')+'">'+esc(k.hint)+'</div>'
+    +'<div class="note'+(k.st==='bad'?' alert':'')+'">'+esc(k.hint)+'</div>'+futWarn
     +'<div class="acts"><button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button>'
     +'<button class="btn sm ghost" onclick="openRepay(\''+c.id+'\')">登记还款</button>'
     +'<button class="btn sm ghost" onclick="go(\'hist\',\''+c.id+'\')">明细</button></div></div>';
@@ -758,7 +761,14 @@ function dl(blob,name){
 }
 function markBackup(){S.settings.lastBackup=fd(today());save();}
 
+// 读失败时 S 是空壳：导出的「备份」看着正常其实是空的，拿去覆盖好备份就真丢了（小程序端同款拦截）
+function exportBlocked(){
+  if(!loadFailed) return false;
+  alert('这次没能读出本机数据，导出的会是空的。请刷新页面重试后再备份。');
+  return true;
+}
 function openExport(){
+  if(exportBlocked())return;
   const txt=JSON.stringify(S);
   const kb=(txt.length/1024).toFixed(1);
   showModal('<h3>导出备份</h3>'
@@ -788,6 +798,7 @@ async function copyExp(){
   }
 }
 function dlJSON(){
+  if(exportBlocked())return;
   dl(new Blob([JSON.stringify(S,null,2)],{type:'application/json'}),'卡周期备份-'+fd(today())+'.json');
   markBackup(); renderAll();
 }

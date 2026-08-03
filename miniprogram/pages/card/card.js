@@ -24,7 +24,7 @@ Page({
         wx.setNavigationBarTitle({ title: '编辑信用卡' });
       }
     } else {
-      this.setData({ buf: String(S.settings.buffer || 3) });
+      this.setData({ buf: String(S.settings.buffer == null ? 3 : S.settings.buffer) });   // 0 是合法值
       wx.setNavigationBarTitle({ title: '添加信用卡' });
     }
     this.preview();

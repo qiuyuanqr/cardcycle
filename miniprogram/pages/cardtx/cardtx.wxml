@@ -13,6 +13,7 @@
       <view class="cd">{{v.cdText}} <text class="cd-n n-{{v.st}}">{{v.cdNum}}</text> 天</view>
     </view>
     <view class="note">{{v.idle ? v.idleLine : v.hint}}</view>
+    <view wx:if="{{v.futWarn}}" class="note c-bad">{{v.futWarn}}</view>
     <view class="acts">
       <view wx:if="{{v.hasAmt}}" class="btn sm" bindtap="repay">登记还款</view>
       <view class="btn sm ghost" bindtap="goSwipe">记消费</view>

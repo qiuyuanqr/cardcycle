@@ -79,9 +79,12 @@
    * @param payments 全部还款 [{id, cardId, date:'YYYY-MM-DD', amount}]
    * @param settings {buffer}
    * @param ref      参考日（默认今天）
-   * @returns {anchor,prevA,winStart,due,cur,curN,over,overN,deposit,toDue,toAnchor,st,label,hint,pct}
+   * @returns {anchor,prevA,winStart,due,cur,curN,over,overN,fut,futN,deposit,toDue,toAnchor,st,label,hint,pct}
    *   st: bad | hot | warn | ok | idle
    *   deposit: 存款（还款超出全部消费的部分），下次消费自动抵扣
+   *   fut/futN: 归入未来周期的消费金额（原额）与笔数——多半是日期录错。
+   *     这类消费不进 cur/over，但和其他消费一样按日期顺序占用还款额度，
+   *     会让「存款」无声变少，所以必须报出来让界面提示用户去流水核对
    */
   function calc(card, txns, payments, settings, ref) {
     ref = ref || today();
@@ -99,16 +102,18 @@
       if (p.cardId === card.id) credit += Math.round(p.amount * 100);
 
     let cur = 0, curN = 0, over = 0, overN = 0, curAll = 0;  // curAll：本期消费总额（含已冲抵）
+    let fut = 0, futN = 0;                               // 归入未来周期的消费（原额，不看冲抵）
     for (const t of charges) {
       let amt = Math.round(t.amount * 100);
       const k = fd(nextStmt(card.statementDay, pd(t.date)));
       if (k === aKey) curAll += amt;
+      else if (k > aKey) { fut += amt; futN++; }
       if (credit >= amt) { credit -= amt; continue; }    // 这笔已被还款冲抵
       amt -= credit; credit = 0;
       if (k === aKey) { cur += amt; curN++; }
       else if (k < aKey) { over += amt; overN++; }
     }
-    cur /= 100; over /= 100; curAll /= 100;
+    cur /= 100; over /= 100; curAll /= 100; fut /= 100;
     const deposit = credit / 100;                        // 冲抵完全部消费后剩下的钱
 
     const toDue    = diffD(ref, due);
@@ -140,7 +145,7 @@
       st = 'ok'; label = '周期进行中';
       hint = '还款截止 ' + md(due) + '，账单日 ' + md(anchor) + '。';
     }
-    return { anchor, prevA, winStart, due, cur, curN, over, overN, deposit, toDue, toAnchor, st, label, hint,
+    return { anchor, prevA, winStart, due, cur, curN, over, overN, fut, futN, deposit, toDue, toAnchor, st, label, hint,
              pct: total > 0 ? Math.round(gone / total * 100) : 0 };
   }
 
