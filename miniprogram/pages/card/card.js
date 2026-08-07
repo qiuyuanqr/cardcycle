@@ -56,19 +56,12 @@ Page({
     if (!bank) { wx.showToast({ title: '请填银行名称', icon: 'none' }); return; }
     if (!(stmt >= 1 && stmt <= 31)) { wx.showToast({ title: '账单日填 1–31', icon: 'none' }); return; }
     if (!(buf >= 0 && buf <= 15)) { wx.showToast({ title: '提前天数填 0–15', icon: 'none' }); return; }
-    const S = this.S;
-    const data = {
-      personId: store.ensureMe(S), bank,
-      last4: (d.last4 || '').trim() || '****',
+    // 整个变更（含 ensureMe 补默认持卡人）由 saveCardData 做成快照事务：
+    // save 失败全部回滚，重试不会积累重复卡
+    if (!store.saveCardData(this.S, this.id, {
+      bank, last4: (d.last4 || '').trim() || '****',
       statementDay: stmt, buffer: buf, limit: +d.limit || 0
-    };
-    if (this.id) Object.assign(store.cardById(S, this.id), data);
-    else S.cards.push(Object.assign({ id: store.uid() }, data));
-    if (!store.save(S)) {
-      wx.showModal({ title: '没能保存', showCancel: false,
-        content: '这张卡没有写入本机存储，请退出小程序重新进入后再试。' });
-      return;
-    }
+    })) return;
     wx.showToast({ title: '已保存', icon: 'success' });
     setTimeout(() => wx.navigateBack(), 600);
   },

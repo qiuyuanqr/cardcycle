@@ -9,7 +9,7 @@ const Core = require('./core.js');
    微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
    靠它判断不了手上跑的是哪一版，所以这里硬编码。
    ★ 每次 cli upload 改 -v 时，这里要同步改。 */
-const APP_VERSION = '1.0.18';
+const APP_VERSION = '1.0.19';
 
 const KEY = 'cardcycle.v1';
 const DEF = {
@@ -296,8 +296,31 @@ function applyRepay(S, cardId, raw) {
   return true;
 }
 
+/* 保存卡片（新增或编辑）：整个变更做成一个快照事务。
+   ensureMe 可能往 people 里补默认持卡人——它也必须进快照：
+   save 失败时 people/cards 全部回滚，否则用户留在页面上再点一次「保存」，
+   新增分支会再 push 一张新 id 的同款卡，下次 save 成功就落盘两张重复卡。
+   fields 为卡片字段（不含 id/personId）。成功返回 true，供页面提示并返回。 */
+function saveCardData(S, cardId, fields) {
+  const peopleN = S.people.length;                       // ensureMe 之前的快照
+  const data = Object.assign({ personId: ensureMe(S) }, fields);
+  const target = cardId ? cardById(S, cardId) : null;
+  const prev = target ? Object.assign({}, target) : null; // 编辑前的字段快照
+  if (target) Object.assign(target, data);
+  else S.cards.push(Object.assign({ id: uid() }, data));
+  if (!save(S)) {
+    if (target) Object.assign(target, prev);
+    else S.cards.pop();
+    S.people.length = peopleN;                           // ensureMe 补的人一并撤掉
+    wx.showModal({ title: '没能保存', showCancel: false,
+      content: '这张卡没有写入本机存储，请退出小程序重新进入后再试。' });
+    return false;
+  }
+  return true;
+}
+
 module.exports = {
-  Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe,
+  Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe, saveCardData,
   cardById, termById, cardLabel, termLast, termLastFor,
   cardView, dashData, swipeOptions, swipeWarning,
   cardTxData, repayInfo, applyRepay

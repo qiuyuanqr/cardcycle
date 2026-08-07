@@ -53,6 +53,32 @@
 
 ---
 
+## Codex 第三批复审（2026-08-07：saveCard 无回滚 + ensureMe 在快照外）
+
+**报告**：「新增卡片前的默认持卡人初始化不在事务快照内」。核实：**属实**，且顺着它
+发现更实的问题——**`saveCard` 从来就没有过回滚**（git 历史确认；批次 3 结论写
+「三条主写路径 save 失败均回滚」，对 saveCard **记载与代码不符**，当时审错了）。
+
+- 持卡人部分：`ensureMe` 幂等（people 非空不再补），单独看基本无害；
+- 真正的危害在**卡 push 不幂等**：save 失败 → 无回滚 → 用户留在页面再点「保存」→
+  又 push 一张新 id 的同款卡 → 这次 save 成功，**两张重复卡一起落盘**；
+- 网页版三个写路径（saveCard/saveSwipe/doRepay）同款：save 后不看结果也不回滚，
+  quota 类写失败场景同样能积累重复再一起落盘。
+
+**修法（1.0.19 / 网页版同日上线）**：
+- 小程序：新增 `store.saveCardData(S, cardId, fields)`（对齐 applyRepay 先例，下沉到
+  store 层可测）：people 长度快照取在 ensureMe **之前** → 变更 → save 失败则卡与
+  持卡人全部回滚；`card.js` 改为调用它；
+- 网页版：`save()` 改为返回布尔（其他调用点忽略返回值不受影响）；saveCard 同款快照
+  事务（peopleN 同样必须取在 ensureMe 之前）、saveSwipe/doRepay 失败 pop 回滚，
+  失败不关弹窗让用户重试或取消。
+
+**验证**：`npm test` 38 项全过（新增 saveCardData 两组：写失败回滚+连点不积累+恢复后
+恰一张落盘；编辑失败逐字段还原）；网页版浏览器实测（setItem 抛异常）：连点两次
+卡与持卡人均回滚、恢复后第三次点恰一张卡/一个持卡人落盘、记消费失败回滚。
+
+---
+
 ## 批次 1 结论（core.js + 测试 + CI）
 
 **验证基线**：`npm test` 30 项全过、`check-sync` 两份 core.js 逐字节一致。
@@ -197,7 +223,7 @@ function load(){ try{ ... }catch(e){ loadFailed=true; ... } }
 ## 批次 3 结论（小程序页面层 + 与网页行为一致性）
 
 **未发现 P0/P1。** 资金计算全部走 core；三条主写路径（记消费 `saveTx` /
-登记还款 `applyRepay` / 保存卡片 `saveCard`）save 失败均回滚内存并如实报错，
+登记还款 `applyRepay` / 保存卡片 `saveCard`）save 失败均回滚内存并如实报错（**更正 2026-08-07**：saveCard 当时并无回滚，此处审错，见「Codex 第三批复审」，已修），
 与 2.3 备忘一致。逐项核对与网页一致的行为：记消费的未来日期确认、
 流水筛选记 id 不记下标（删卡回落「全部」）、导入走 normalize、
 导出备份挡 readFailed（此项反超网页版，见 P2-2）。

@@ -276,14 +276,14 @@ function load(){
     return structuredClone(DEF);
   }
 }
-function save(){
+function save(){                                   // 返回是否真的写进了盘：写路径失败要回滚内存，别让界面显示一笔没存上的账
   if(loadFailed){
     alert('这次没能读出本机数据，为避免把原数据覆盖成空的，已阻止保存。\n\n'
       +'请刷新页面重试；如果反复如此，先用浏览器的开发者工具导出 cardcycle.v1 的内容留底。');
-    return;
+    return false;
   }
-  try{ localStorage.setItem(KEY,JSON.stringify(S)); }
-  catch(e){ alert('保存失败：'+e.message+'\n\n请到「设置」导出备份，避免数据丢失。'); }
+  try{ localStorage.setItem(KEY,JSON.stringify(S)); return true; }
+  catch(e){ alert('保存失败：'+e.message+'\n\n请到「设置」导出备份，避免数据丢失。'); return false; }
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
@@ -684,12 +684,23 @@ function saveCard(id){
   if(!(stmt>=1&&stmt<=31)){alert('账单日填 1–31');return;}
   if(!(buf>=0&&buf<=15)){alert('提前天数填 0–15');return;}
   const pEl=document.getElementById('fPerson');
+  // 整个变更（含 ensureMe 可能补的默认持卡人）做成快照事务：save 失败全部回滚，
+  // 否则重试会再 push 一张新 id 的同款卡，下次保存成功就落盘两张重复卡（小程序端同款）。
+  // peopleN 必须在 ensureMe 之前取——它就是要撤掉 ensureMe 补的那个人
+  const peopleN=S.people.length;
   const data={personId:pEl?pEl.value:ensureMe(),bank,
     last4:document.getElementById('fLast4').value.trim()||'****',
     statementDay:stmt,buffer:buf,limit:+document.getElementById('fLimit').value||0};
-  if(id) Object.assign(cardById(id),data);
+  const target=id?cardById(id):null, prev=target?Object.assign({},target):null;
+  if(target) Object.assign(target,data);
   else S.cards.push(Object.assign({id:uid()},data));
-  save();closeModal();renderAll();
+  if(!save()){
+    if(target) Object.assign(target,prev);
+    else S.cards.pop();
+    S.people.length=peopleN;
+    return;                                        // 失败不关弹窗：让用户重试或自己取消
+  }
+  closeModal();renderAll();
 }
 
 /* ---- 记一笔 ---- */
@@ -751,7 +762,8 @@ function saveSwipe(){
   S.txns.push({id:uid(),cardId:swipeCard,terminalId:swipeTerm,
     date:dt,amount:a,
     note:document.getElementById('sNote').value.trim(),ts:Date.now()});
-  save();closeModal();go('dash');
+  if(!save()){S.txns.pop();return;}   // 没写进盘就回滚：界面上显示一笔没存上的账，比报错更糊弄人
+  closeModal();go('dash');
 }
 
 /* ---- 还款 ---- */
@@ -772,7 +784,8 @@ function doRepay(cid){
   const c=cardById(cid),k=calc(c);
   const owed=Math.round((k.cur+k.over)*100)/100;
   S.payments.push({id:uid(),cardId:cid,date:fd(today()),amount:amt,ts:Date.now()});
-  save();closeModal();renderAll();
+  if(!save()){S.payments.pop();return;}   // 同 saveSwipe：写不进盘就回滚，不谎报已登记
+  closeModal();renderAll();
   if(amt>owed) alert('已登记还款 ¥'+money(amt)+'，其中 ¥'+money(Math.round((amt-owed)*100)/100)
     +' 超出待还，记为存款，下次消费自动抵扣。');
 }

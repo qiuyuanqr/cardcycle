@@ -159,3 +159,34 @@ test('normalize：历史遗留的孤儿还款（老版本删卡留下的）自�
   const S = store.normalize(d);
   assert.deepStrictEqual(S.payments.map(p => p.id), ['p1'], '指向已删卡的还款不该留在账上');
 });
+
+/* ---------- 保存卡片：整个变更（含默认持卡人）是一个快照事务 ---------- */
+
+test('saveCardData：写失败时卡和 ensureMe 补的持卡人一并回滚，重试不留重复', () => {
+  const box = mockWx(undefined, { writeThrows: true });
+  // 空状态（people 也空）：ensureMe 会补默认持卡人，它必须在同一个事务快照里
+  const S = store.normalize({});
+  const fields = { bank: '广发', last4: '1234', statementDay: 10, buffer: 3, limit: 0 };
+  assert.strictEqual(store.saveCardData(S, null, fields), false);
+  assert.strictEqual(S.cards.length, 0, '卡回滚');
+  assert.strictEqual(S.people.length, 0, 'ensureMe 补的持卡人也回滚——它不能留在快照之外');
+  // 用户留在页面上再点一次「保存」：不能积累第二张卡
+  assert.strictEqual(store.saveCardData(S, null, fields), false);
+  assert.strictEqual(S.cards.length, 0, '重试不重复 push');
+  // 存储恢复后第三次点：只落一张卡、一个持卡人
+  global.wx.setStorageSync = (k, v) => { box.data = JSON.parse(JSON.stringify(v)); };
+  assert.strictEqual(store.saveCardData(S, null, fields), true);
+  assert.strictEqual(S.cards.length, 1, '成功后恰好一张卡（此前失败的尝试没留残骸）');
+  assert.strictEqual(S.people.length, 1);
+  assert.strictEqual(S.cards[0].personId, S.people[0].id, '卡挂在补出来的持卡人上');
+  assert.strictEqual(box.data.cards.length, 1, '盘上也是一张');
+});
+
+test('saveCardData：编辑失败时恢复改动前的字段', () => {
+  mockWx(undefined, { writeThrows: true });
+  const S = store.normalize(REAL());
+  const before = Object.assign({}, S.cards[0]);
+  assert.strictEqual(store.saveCardData(S, 'cA',
+    { bank: '改了名', last4: '9999', statementDay: 28, buffer: 0, limit: 0 }), false);
+  assert.deepStrictEqual(S.cards[0], before, '编辑回滚到改动前，逐字段一致');
+});
