@@ -230,6 +230,16 @@ const DEF={people:[],cards:[],terminals:[],txns:[],payments:[],
            settings:{buffer:3,minGap:7,lastBackup:null,
                      cardSort:'smart',      // 概览排序：smart 紧急程度 | recent 最近变动 | custom 自定义
                      swipeStyle:'chips'}};  // 记消费选卡方式：chips 平铺 | list 下拉列表
+
+// 数据读不出来时置位：此后一切写入都要挡掉，否则第一次操作就把原数据覆盖成空。
+// ★ 这两个 let 必须声明在 let S=load() 之前。load() 的失败分支要给它们赋值，
+//   若声明在后面，异常路径会撞上暂时性死区（TDZ）抛 ReferenceError，
+//   整个脚本从 let S=load() 这一行就中断——事件绑定和首屏渲染全都不执行，
+//   页面变成点不动的空壳，用户连「设置 → 粘贴/导入」这条恢复路径都进不去。
+let loadFailed=false;
+// 真·首次打开（存储里确实没有这个 key）时置位，供启动尾部的种子判断使用。
+// 那里不要再读一次 localStorage：存储整体不可用时 getItem 会抛异常，同样中断脚本。
+let firstRun=false;
 let S=load();
 
 // 备份/存储数据 → 内部状态（含 2.2 以前逐笔 repaid 标记的旧数据迁移）
@@ -251,12 +261,10 @@ function normalize(d){
   s.txns=o.txns; s.payments=o.payments;
   return s;
 }
-// 数据读不出来时置位：此后一切写入都要挡掉，否则第一次操作就把原数据覆盖成空
-let loadFailed=false;
 function load(){
   try{
     const r=localStorage.getItem(KEY);
-    if(!r) return structuredClone(DEF);      // 真·首次打开
+    if(!r){ firstRun=true; return structuredClone(DEF); }   // 真·首次打开
     return normalize(JSON.parse(r));
   }catch(e){
     loadFailed=true;
@@ -906,7 +914,8 @@ function renderAll(){
 }
 
 // 首次打开：一个隐形持卡人 + 一个示例商户（可改可删）
-if(!localStorage.getItem(KEY)){
+// 用 load() 里置的 firstRun，不要在这里重读 localStorage——见上面 firstRun 的声明处
+if(firstRun){
   S.people=[{id:uid(),name:'我'}];
   S.terminals=[{id:uid(),name:'老张便利店',note:''}];
   save();
@@ -914,6 +923,11 @@ if(!localStorage.getItem(KEY)){
 // 老数据迁移：已经有多个持卡人的，自动切到多人模式
 if(S.people.length>1 && S.settings.multiUser!==true){ S.settings.multiUser=true; save(); }
 renderAll();
+// 读失败时界面是空的，看着和「数据丢了」一模一样——必须如实告知并指路，
+// 否则用户要么以为白干一场，要么直接重录一遍。与小程序端读失败的 toast 对齐。
+if(loadFailed) alert('这次没能读出本机数据。\n\n原来的数据没有被覆盖，先刷新页面重试。\n\n'
+  +'在读出来之前，这里显示的是空的：请不要重新录入，也不要用它导出备份覆盖旧备份。\n'
+  +'如果刷新多次都不行，可以到「设置 → 粘贴/导入」用之前的备份恢复。');
 askPersist();
 
 // PWA 从后台切回前台时重算——否则隔夜打开显示的还是昨天的倒计时
