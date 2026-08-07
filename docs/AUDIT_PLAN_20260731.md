@@ -37,6 +37,22 @@
 
 ---
 
+## Codex 第二批复审（2026-08-07，5 项，全部已核实处置）
+
+| 报告项 | 核实结论 | 处置 |
+|---|---|---|
+| P1 启动尾部裸读存储 | **不成立于当前代码**——Codex 审的是 `bb59140` 之前拷走的副本；该裸读正是 bb59140 修复的第 2 处（`firstRun`）。当前 `localStorage` 仅剩 `load`/`save` 的 try 内两处，`askPersist` 为 async 且整体包 try。上次场景 A 实测即「每次读取都抛错」，页面可启动、恢复路径可达 | 无需改码；网页版无自动化测试仍是已知缺口 |
+| P2 金额缺有限值/两位小数校验 | **属实**。四个入口只判 `>0`：`1e999`（number 框敲得出）→ Infinity → `JSON.stringify` 写成 null → 重载金额归零；`0.001` 网页消费原样入库显示 0.00，还款舍入为 0 仍提示「已登记 ¥0.00」 | `core.parseAmount`（有限、>0、≤2 位小数、≤1e8，超界返回 null），四入口接入，测试固化 |
+| P2 导入字段校验不足（自 XSS）＝W-a | **属实**。normalize 只挡顶层；`card.id` 等拼进 `onclick="doRepay('<id>')"`，构造过的备份可闭合引号执行代码、读走同源账单数据 | `core.sanitizeState` 白名单重建：id 只认 `[\w-]{1,32}` 否则重发（引用按映射跟走）、日期须真实 YYYY-MM-DD 否则整条丢弃并计数、金额须有限正数（存量宽容不拦小数位——入口从严）、文本截断、settings 逐项白名单。两端 normalize 在 migrateRepaid 之后接入（清洗会剥掉 repaid 标记，顺序不能反）。浏览器实测：恶意 id 备份注入未触发、还款弹窗正常、坏记录正确丢弃。**注意：今后新增 settings 字段必须同步进 sanitizeState 白名单，否则每次 load 被抹掉** |
+| P2 小程序 ICS 缺 multiUser ＝批次 3 漏网 | **属实**。`settings.js` 导出未传 `multiUser`，网页版传了；多人代管时提醒不带人名 | 补传 `multiUser: S.settings.multiUser === true` |
+| P3 清空文案漏报还款 ＝W-c | **属实**。两端确认文案只列卡/商户/消费；小程序端 save 失败仍 toast「已清空」 | 两端文案补「N 条还款记录（含存款）」；小程序端 save 成功才报已清空 |
+
+验证：`npm test` 36 项全过（新增 parseAmount 5 断言组 + sanitizeState 4 组）；
+网页版浏览器实测——两入口 `1e999`/`0.001` 均拦、正常金额入库、恶意备份 id 清洗
+且引用一致、注入未执行、清空文案含还款数。W-a、W-c 至此销案。
+
+---
+
 ## 批次 1 结论（core.js + 测试 + CI）
 
 **验证基线**：`npm test` 30 项全过、`check-sync` 两份 core.js 逐字节一致。

@@ -60,6 +60,24 @@
     return neg + i.replace(/\B(?=(\d{3})+$)/g, ',') + '.' + f;
   }
 
+  /**
+   * 金额输入解析（记消费/登记还款两端共用）。
+   * 只认「有限、大于零、最多两位小数、不超过一亿」的金额，其余一律返回 null：
+   *  - Infinity/NaN 会被 JSON.stringify 写成 null，重新载入后金额变 0（1e999 在
+   *    number 输入框里是能敲出来的）；
+   *  - 超过两位小数的（如 0.001）按分换算后是 0，「已登记还款 ¥0.00」比报错更糊弄人。
+   * 拒绝发生在入口，存量数据不经过这里——老记录宽容，新输入从严。
+   * @returns 规范化后的金额（两位小数），或 null（无效，界面层负责提示）
+   */
+  function parseAmount(v) {
+    const n = Number(String(v == null ? '' : v).trim());
+    if (!isFinite(n) || n <= 0 || n > 1e8) return null;
+    const c = Math.round(n * 100);                 // 分为单位
+    if (c <= 0) return null;
+    if (Math.abs(n * 100 - c) > 1e-4) return null; // 超过两位小数（容差吸收浮点误差）
+    return c / 100;
+  }
+
   /* ---------- 周期计算 ---------- */
   // 该卡的还款提前天数（卡未单独设置时用全局默认）
   // 0 是合法值（账单日当天才还），只有真的没设过才回落到 3——不能用 || 判空
@@ -167,6 +185,76 @@
       return c;
     });
     return { txns: out, payments };
+  }
+
+  /* ---------- 导入/载入数据的字段清洗 ---------- */
+  /**
+   * 备份是一段用户可粘贴的文本，字段内容不可信。界面层有把 id、日期直接拼进
+   * HTML/onclick 字符串的地方（如 doRepay('<id>')），构造过的备份可造成自 XSS，
+   * 进而读走本机账单数据。这里按白名单重建每条记录：
+   *  - id 只认 [A-Za-z0-9_-]{1,32}，不合法的重新生成，引用（cardId 等）跟着 id 映射走；
+   *  - 日期必须是真实存在的 YYYY-MM-DD，不合法的整条丢弃（坏日期本来也算不出周期）；
+   *  - 金额必须是有限正数，否则整条丢弃（Infinity 经 JSON 往返会变 null）；
+   *    注意这里比入口的 parseAmount 宽（不拦小数位）——入口从严、存量宽容；
+   *  - 文本字段截断长度；statementDay 夹到 1–31；settings 逐项白名单。
+   * 纯函数：不修改传入对象。返回 {people,cards,terminals,txns,payments,settings,dropped}，
+   * dropped 为被丢弃的流水条数，供导入界面如实告知。
+   * ★ settings 按白名单重建：今后新增设置项必须同步加进下面的 settings 组装，
+   *   否则每次 load 都会被这里抹掉（两端 normalize 都过这个函数）。
+   */
+  function sanitizeState(s, newId) {
+    newId = newId || (() => Math.random().toString(36).slice(2, 10));
+    const idMap = {};                      // 旧值 → 重发的 id（同一旧值映射同一新值）
+    const okId  = v => typeof v === 'string' && /^[\w-]{1,32}$/.test(v);
+    const fixId = v => okId(v) ? v : (idMap[String(v)] || (idMap[String(v)] = newId()));
+    const refId = v => okId(v) ? v : (idMap[String(v)] || null);   // 引用跟着映射走，找不到就置空（pruneOrphans 收拾）
+    const str   = (v, max) => String(v == null ? '' : v).slice(0, max);
+    const okDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && fd(pd(v)) === v;
+    const posAmt = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : null; };
+    const intOr  = (v, lo, hi, dft) => {
+      const n = Math.floor(Number(v));
+      return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : dft;
+    };
+    let dropped = 0;
+
+    const people = (s.people || []).map(p => ({ id: fixId(p.id), name: str(p.name, 40) }));
+    const cards = (s.cards || []).map(c => ({
+      id: fixId(c.id), personId: refId(c.personId),
+      bank: str(c.bank, 40), last4: str(c.last4, 8),
+      statementDay: intOr(c.statementDay, 1, 31, 1),
+      buffer: c.buffer == null ? null : intOr(c.buffer, 0, 28, null),
+      limit: posAmt(c.limit)
+    }));
+    const terminals = (s.terminals || []).map(t =>
+      ({ id: fixId(t.id), name: str(t.name, 40), note: str(t.note, 200) }));
+    const txns = [], payments = [];
+    for (const t of (s.txns || [])) {
+      const amt = posAmt(t.amount);
+      if (!okDate(t.date) || amt == null) { dropped++; continue; }
+      const c = { id: fixId(t.id), cardId: refId(t.cardId), terminalId: refId(t.terminalId),
+                  date: t.date, amount: amt, note: str(t.note, 200) };
+      if (isFinite(Number(t.ts)) && t.ts > 0) c.ts = Number(t.ts);
+      txns.push(c);
+    }
+    for (const p of (s.payments || [])) {
+      const amt = posAmt(p.amount);
+      if (!okDate(p.date) || amt == null) { dropped++; continue; }
+      const c = { id: fixId(p.id), cardId: refId(p.cardId), date: p.date, amount: amt };
+      if (isFinite(Number(p.ts)) && p.ts > 0) c.ts = Number(p.ts);
+      payments.push(c);
+    }
+    const g = s.settings || {};
+    const settings = {
+      buffer: g.buffer == null ? null : intOr(g.buffer, 0, 28, null),
+      minGap: g.minGap == null ? null : intOr(g.minGap, 0, 365, null),
+      lastBackup: okDate(g.lastBackup) ? g.lastBackup : null,
+      multiUser: g.multiUser === true,
+      cardSort: ['smart', 'recent', 'custom'].indexOf(g.cardSort) >= 0 ? g.cardSort : 'smart',
+      swipeStyle: ['chips', 'list'].indexOf(g.swipeStyle) >= 0 ? g.swipeStyle : 'chips'
+    };
+    if (settings.buffer == null) settings.buffer = 3;
+    if (settings.minGap == null) settings.minGap = 7;
+    return { people, cards, terminals, txns, payments, settings, dropped };
   }
 
   /* ---------- 旧版种子商户清理 ---------- */
@@ -373,7 +461,7 @@
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, calc, migrateRepaid, pruneSeedTerminals,
+           money, bufOf, parseAmount, calc, migrateRepaid, sanitizeState, pruneSeedTerminals,
            lastActTs, recentBand, recentCmp, txnCmp,
            removeCard, removePerson, pruneOrphans,
            buildReminders, buildICS, icsFold, utf8Len };

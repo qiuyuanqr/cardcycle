@@ -423,3 +423,85 @@ test('pruneSeedTerminals：清理旧版占位商户，真实商户绝不动', ()
     .map(t => t.name), ['老张便利店']);
   assert.deepStrictEqual(C.pruneSeedTerminals([], [], () => 'n5'), []);
 });
+
+/* ---- 金额输入解析（记消费/登记还款入口共用） ------------------ */
+
+test('parseAmount：只认有限、正、最多两位小数、不超一亿的金额', () => {
+  assert.strictEqual(C.parseAmount('100'), 100);
+  assert.strictEqual(C.parseAmount('99.5'), 99.5);
+  assert.strictEqual(C.parseAmount('0.01'), 0.01, '最小合法金额一分');
+  assert.strictEqual(C.parseAmount(' 250.00 '), 250, '首尾空白容忍');
+  // 以下全部拒绝
+  assert.strictEqual(C.parseAmount('0.001'), null, '超两位小数：舍入成 0 也不许「已登记 ¥0.00」');
+  assert.strictEqual(C.parseAmount('1.005'), null, '超两位小数');
+  assert.strictEqual(C.parseAmount('1e999'), null, 'Infinity：JSON 往返会变 null、金额归零');
+  assert.strictEqual(C.parseAmount('Infinity'), null);
+  assert.strictEqual(C.parseAmount('NaN'), null);
+  assert.strictEqual(C.parseAmount('abc'), null);
+  assert.strictEqual(C.parseAmount(''), null);
+  assert.strictEqual(C.parseAmount(null), null);
+  assert.strictEqual(C.parseAmount('0'), null);
+  assert.strictEqual(C.parseAmount('-5'), null);
+  assert.strictEqual(C.parseAmount('100000001'), null, '超过一亿拒绝');
+});
+
+/* ---- 导入数据的字段清洗（防恶意备份自 XSS） ------------------- */
+
+test('sanitizeState：不合法 id 重发且引用跟着映射走，拼进 onclick 不再有注入面', () => {
+  const evil = "x'); alert(document.cookie); ('";
+  const s = C.sanitizeState({
+    cards: [{ id: evil, bank: '广发', statementDay: 10 }],
+    txns: [{ id: 't1', cardId: evil, date: '2026-08-01', amount: 100 }],
+    payments: [{ id: 'p1', cardId: evil, date: '2026-08-02', amount: 50 }]
+  }, (() => { let i = 0; return () => 'new' + (++i); })());
+  assert.match(s.cards[0].id, /^[\w-]{1,32}$/, 'id 重发成安全字符');
+  assert.strictEqual(s.txns[0].cardId, s.cards[0].id, '消费引用跟着新 id');
+  assert.strictEqual(s.payments[0].cardId, s.cards[0].id, '还款引用跟着新 id');
+});
+
+test('sanitizeState：坏日期/坏金额整条丢弃并计数，好记录一条不丢', () => {
+  const s = C.sanitizeState({
+    txns: [
+      { id: 'a', cardId: 'c', date: '2026-08-01', amount: 100, ts: 5 },
+      { id: 'b', cardId: 'c', date: "08-01');evil(", amount: 100 },   // 坏日期
+      { id: 'c', cardId: 'c', date: '2026-02-30', amount: 100 },      // 不存在的日期
+      { id: 'd', cardId: 'c', date: '2026-08-01', amount: null }      // Infinity 经 JSON 往返后的样子
+    ],
+    payments: [{ id: 'e', cardId: 'c', date: '2026-08-02', amount: 'NaN' }]
+  });
+  assert.strictEqual(s.txns.length, 1);
+  assert.strictEqual(s.txns[0].ts, 5, '合法 ts 保留');
+  assert.strictEqual(s.payments.length, 0);
+  assert.strictEqual(s.dropped, 4, '丢了几条要如实报数');
+});
+
+test('sanitizeState：正常数据原样通过（金额不拦小数位——入口从严、存量宽容）', () => {
+  const good = {
+    people: [{ id: 'p1', name: '我' }],
+    cards: [{ id: 'c1', personId: 'p1', bank: '建设', last4: '1234', statementDay: 28, buffer: 0, limit: 50000 }],
+    terminals: [{ id: 't1', name: '老张便利店', note: '' }],
+    txns: [{ id: 'x1', cardId: 'c1', terminalId: 't1', date: '2026-07-30', amount: 0.001, note: '老记录', ts: 9 }],
+    payments: [{ id: 'y1', cardId: 'c1', date: '2026-07-31', amount: 200, ts: 10 }],
+    settings: { buffer: 0, minGap: 0, lastBackup: '2026-07-01', multiUser: true, cardSort: 'custom', swipeStyle: 'list' }
+  };
+  const s = C.sanitizeState(good);
+  assert.deepStrictEqual(s.cards, good.cards, '卡片逐字段不变（含 buffer 0）');
+  assert.strictEqual(s.txns[0].amount, 0.001, '存量小金额不丢');
+  assert.strictEqual(s.settings.minGap, 0, '间隔 0 是合法值');
+  assert.strictEqual(s.settings.cardSort, 'custom');
+  assert.strictEqual(s.dropped, 0);
+});
+
+test('sanitizeState：settings 白名单——乱值回默认，statementDay 夹到 1–31', () => {
+  const s = C.sanitizeState({
+    cards: [{ id: 'c1', bank: 'B', statementDay: '<img onerror=x>' }],
+    settings: { buffer: 'evil', minGap: -3, cardSort: 'hax', swipeStyle: 42, multiUser: 'yes', lastBackup: 'junk' }
+  });
+  assert.strictEqual(s.cards[0].statementDay, 1);
+  assert.strictEqual(s.settings.buffer, 3, '乱值回默认');
+  assert.strictEqual(s.settings.minGap, 0, '负数夹到 0');
+  assert.strictEqual(s.settings.cardSort, 'smart');
+  assert.strictEqual(s.settings.swipeStyle, 'chips');
+  assert.strictEqual(s.settings.multiUser, false, '只认 === true');
+  assert.strictEqual(s.settings.lastBackup, null);
+});

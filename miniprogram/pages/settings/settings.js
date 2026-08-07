@@ -130,7 +130,9 @@ Page({
   exportICS() {
     const S = this.S;
     if (!S.cards.length) { wx.showToast({ title: '还没有信用卡', icon: 'none' }); return; }
-    const r = Core.buildICS(S.cards, S.people, S.settings, { months: 12 });
+    // multiUser 要传：多人代管时提醒标题带人名，同银行/无尾号的卡才分得清是谁的（与网页版一致）
+    const r = Core.buildICS(S.cards, S.people, S.settings,
+                            { months: 12, multiUser: S.settings.multiUser === true });
     const path = wx.env.USER_DATA_PATH + '/cardcycle.ics';
     // 同步写文件：shareFileMessage 必须留在点击事件的调用链里，
     // 放进异步回调会因“非用户触发”而失败（表现为一直「未发送」）。
@@ -260,7 +262,8 @@ Page({
       title: '清空全部数据',
       content: '将删除本机的 ' + S.cards.length + ' 张信用卡、'
              + S.terminals.length + ' 个商户、' + S.txns.length
-             + ' 条消费记录，无法恢复。建议先「复制备份」。确定清空？',
+             + ' 条消费、' + S.payments.length
+             + ' 条还款记录（含存款），无法恢复。建议先「复制备份」。确定清空？',
       confirmText: '清空', confirmColor: '#e0384a',
       success: r => {
         if (!r.confirm) return;
@@ -269,7 +272,8 @@ Page({
           confirmText: '清空', confirmColor: '#e0384a',
           success: r2 => {
             if (!r2.confirm) return;
-            store.save(JSON.parse(JSON.stringify(store.DEF)));
+            // save 失败时它自己会 toast「保存失败」，这里再喊「已清空」等于谎报
+            if (!store.save(JSON.parse(JSON.stringify(store.DEF)))) return;
             this.refresh();
             wx.showToast({ title: '已清空', icon: 'success' });
           }

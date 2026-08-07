@@ -52,8 +52,9 @@ Page({
 
   saveTx() {
     const d = this.data;
-    const amt = parseFloat(d.amount);
-    if (!(amt > 0)) { wx.showToast({ title: '请填写金额', icon: 'none' }); return; }
+    // parseAmount 拦掉 Infinity（JSON 存完变 null、金额归零）和超两位小数（0.001 显示成 0.00）
+    const amt = Core.parseAmount(d.amount);
+    if (amt == null) { wx.showToast({ title: '金额不对：大于 0，最多两位小数', icon: 'none' }); return; }
     const doSave = () => {
       const S = this.S;
       S.txns.push({

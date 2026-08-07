@@ -9,7 +9,7 @@ const Core = require('./core.js');
    微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
    靠它判断不了手上跑的是哪一版，所以这里硬编码。
    ★ 每次 cli upload 改 -v 时，这里要同步改。 */
-const APP_VERSION = '1.0.17';
+const APP_VERSION = '1.0.18';
 
 const KEY = 'cardcycle.v1';
 const DEF = {
@@ -36,6 +36,11 @@ function normalize(d) {
     const m = Core.migrateRepaid(S.txns, uid);
     S.txns = m.txns; S.payments = m.payments;
   }
+  // 字段级清洗（必须在 migrateRepaid 之后——清洗按白名单重建，会剥掉 repaid 标记）：
+  // 备份文本不可信，与网页版同一道防线，数据格式两端才能继续互导
+  const cl = Core.sanitizeState(S, uid);
+  S.people = cl.people; S.cards = cl.cards; S.terminals = cl.terminals;
+  S.txns = cl.txns; S.payments = cl.payments; S.settings = cl.settings;
   S.terminals = Core.pruneSeedTerminals(S.terminals, S.txns, uid);
   // 老版本删卡只删了消费、还款留成了孤儿，会让流水页汇总凭空多出存款——顺手清掉
   const o = Core.pruneOrphans(S.cards, S.txns, S.payments);
@@ -268,9 +273,12 @@ function repayInfo(S, cardId) {
 function applyRepay(S, cardId, raw) {
   const info = repayInfo(S, cardId);
   if (!info) return false;
-  const amt = (raw || '').trim() ? parseFloat(raw) : info.owed;
-  if (!(amt > 0)) { wx.showToast({ title: '金额不对', icon: 'none' }); return false; }
-  const rec = Math.round(amt * 100) / 100;
+  // 空串按全额；其余走 parseAmount（拦 Infinity 与超两位小数——0.001 舍入成 0
+  // 还提示「已登记还款 ¥0.00」比报错更糊弄人）
+  const rec = (raw || '').trim() ? Core.parseAmount(raw) : Math.round(info.owed * 100) / 100;
+  if (rec == null || !(rec > 0)) {
+    wx.showToast({ title: '金额不对：大于 0，最多两位小数', icon: 'none' }); return false;
+  }
   S.payments.push({ id: uid(), cardId, date: Core.fd(Core.today()), amount: rec, ts: Date.now() });
   if (!save(S)) {                 // 没写进去就别说成功，也别留在内存里造成「记过了」的错觉
     S.payments.pop();

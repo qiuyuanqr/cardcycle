@@ -255,6 +255,11 @@ function normalize(d){
     const m=CardCycleCore.migrateRepaid(s.txns,uid);
     s.txns=m.txns; s.payments=m.payments;
   }
+  // 字段级清洗（必须在 migrateRepaid 之后——清洗按白名单重建，会剥掉 repaid 标记）：
+  // 备份文本不可信，id/日期这类会拼进 HTML 与 onclick 的字段先在这里管住
+  const cl=CardCycleCore.sanitizeState(s,uid);
+  s.people=cl.people;s.cards=cl.cards;s.terminals=cl.terminals;
+  s.txns=cl.txns;s.payments=cl.payments;s.settings=cl.settings;
   s.terminals=CardCycleCore.pruneSeedTerminals(s.terminals,s.txns,uid);
   // 老版本删卡只删了消费、还款留成了孤儿，会让流水汇总凭空多出存款——顺手清掉
   const o=CardCycleCore.pruneOrphans(s.cards,s.txns,s.payments);
@@ -737,8 +742,10 @@ function drawSwipe(){
     +'<button class="btn" onclick="saveSwipe()">保存</button></div>');
 }
 function saveSwipe(){
-  const a=+document.getElementById('sAmt').value;
-  if(!(a>0)){alert('请填写金额');return;}
+  // parseAmount 拦掉 Infinity（1e999 在 number 框里敲得出来，JSON 存完变 null、金额归零）
+  // 和超两位小数（0.001 显示成 0.00，看着记了其实等于没记）
+  const a=CardCycleCore.parseAmount(document.getElementById('sAmt').value);
+  if(a==null){alert('金额不对：请填大于 0 的数字，最多两位小数。');return;}
   const dt=document.getElementById('sDate').value||fd(today());
   if(dt>fd(today()) && !confirm(dt+' 是未来的日期，确定这样记录吗？')) return;
   S.txns.push({id:uid(),cardId:swipeCard,terminalId:swipeTerm,
@@ -760,11 +767,10 @@ function openRepay(cid){
     +'<button class="btn" onclick="doRepay(\''+cid+'\')">登记还款</button></div>');
 }
 function doRepay(cid){
-  const v=+document.getElementById('rAmt').value;
-  if(!(v>0)){alert('请填写还款金额');return;}
+  const amt=CardCycleCore.parseAmount(document.getElementById('rAmt').value);  // 还多少记多少，超出部分是存款
+  if(amt==null){alert('金额不对：请填大于 0 的数字，最多两位小数。');return;}
   const c=cardById(cid),k=calc(c);
   const owed=Math.round((k.cur+k.over)*100)/100;
-  const amt=Math.round(v*100)/100;   // 还多少记多少，超出部分是存款
   S.payments.push({id:uid(),cardId:cid,date:fd(today()),amount:amt,ts:Date.now()});
   save();closeModal();renderAll();
   if(amt>owed) alert('已登记还款 ¥'+money(amt)+'，其中 ¥'+money(Math.round((amt-owed)*100)/100)
@@ -866,7 +872,7 @@ function fileImport(inp){
 }
 function wipe(){
   if(!confirm('将删除本机的 '+S.cards.length+' 张信用卡、'+S.terminals.length+' 个商户、'
-    +S.txns.length+' 条消费记录，无法恢复。建议先导出备份。确定清空？'))return;
+    +S.txns.length+' 条消费、'+S.payments.length+' 条还款记录（含存款），无法恢复。建议先导出备份。确定清空？'))return;
   if(!confirm('再确认一次：数据清空后无法找回，真的要清空？'))return;
   S=structuredClone(DEF);loadFailed=false;save();renderAll();   // 清空是用户明确的动作，不受读失败拦截
 }
