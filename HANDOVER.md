@@ -19,7 +19,7 @@
 | **本地项目目录** | `/Users/yangqiuyuan/Coding/信用卡还款/` | 原主的开发目录，macOS。**注意目录名是中文**，命令行里记得加引号 |
 | **GitHub 仓库** | https://github.com/qiuyuanqr/cardcycle | **公开**，clone 不需要凭据。SSH：`git@github.com:qiuyuanqr/cardcycle.git` |
 | **线上网页版** | https://qiuyuanqr.github.io/cardcycle/ | GitHub Pages，由仓库 `main` 分支自动部署 |
-| **微信小程序** | AppID `wx43420b254f2f2bdd` | 1.0.17 **已发布上线**，微信内可搜到；改版需在已登录的微信开发者工具里 `cli upload` |
+| **微信小程序** | AppID `wx43420b254f2f2bdd` | 线上正式版 1.0.17 **已发布**，微信内可搜到；**1.0.20 体验版已传（2026-08-12，商户改名），待真机验过再提审**；改版需在已登录的微信开发者工具里 `cli upload` |
 | **小程序目录** | 仓库内 `miniprogram/` | 用微信开发者工具「导入项目」指向这个子目录，不是仓库根目录 |
 | **开发者工具 CLI** | `/Applications/wechatwebdevtools.app/Contents/MacOS/cli` | `preview` / `upload` 都走它 |
 
