@@ -30,6 +30,8 @@ Page({
     this.refresh();
   },
   goSwipe() { wx.navigateTo({ url: '/pages/swipe/swipe?cardId=' + this.id }); },
+  // 银行名/后四位/账单日录错了，在这张卡自己的页面上就能改，不用绕回设置页找
+  goEdit() { wx.navigateTo({ url: '/pages/card/card?id=' + this.id }); },
 
   del(e) {
     const { id, kind } = e.currentTarget.dataset;

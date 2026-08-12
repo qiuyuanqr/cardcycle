@@ -17,6 +17,7 @@
     <view class="acts">
       <view wx:if="{{v.hasAmt}}" class="btn sm" bindtap="repay">登记还款</view>
       <view class="btn sm ghost" bindtap="goSwipe">记消费</view>
+      <view class="btn sm ghost" bindtap="goEdit">编辑卡片</view>
     </view>
   </view>
 

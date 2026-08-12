@@ -9,7 +9,7 @@ const Core = require('./core.js');
    微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
    靠它判断不了手上跑的是哪一版，所以这里硬编码。
    ★ 每次 cli upload 改 -v 时，这里要同步改。 */
-const APP_VERSION = '1.0.19';
+const APP_VERSION = '1.0.20';
 
 const KEY = 'cardcycle.v1';
 const DEF = {
@@ -319,8 +319,30 @@ function saveCardData(S, cardId, fields) {
   return true;
 }
 
+/* 商户改名：只动 name。历史消费靠 terminalId 关联，流水与统计会自动跟着显示新名字，
+   所以改名不必碰任何一条消费记录。
+   与 saveCardData 同样的快照事务：写盘失败就把名字改回去——
+   界面上留着一个没存进去的新名字，比改名失败本身更误导人。
+   成功返回 true，供页面刷新。 */
+function renameTerm(S, id, raw) {
+  const name = Core.normTermName(raw);
+  if (!name) { wx.showToast({ title: '商户名不能为空', icon: 'none' }); return false; }
+  const t = termById(S, id);
+  if (!t) return false;
+  const prev = t.name;
+  if (prev === name) return true;          // 没动，不必写盘
+  t.name = name;
+  if (!save(S)) {
+    t.name = prev;
+    wx.showModal({ title: '没能保存', showCancel: false,
+      content: '这个新名字没有写入本机存储，请退出小程序重新进入后再试。' });
+    return false;
+  }
+  return true;
+}
+
 module.exports = {
-  Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe, saveCardData,
+  Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe, saveCardData, renameTerm,
   cardById, termById, cardLabel, termLast, termLastFor,
   cardView, dashData, swipeOptions, swipeWarning,
   cardTxData, repayInfo, applyRepay

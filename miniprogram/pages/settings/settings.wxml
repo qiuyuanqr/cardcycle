@@ -42,6 +42,7 @@
         <view class="tx-t">{{item.name}}</view>
         <view class="tx-s">{{item.sub}}</view>
       </view>
+      <view class="btn sm ghost" bindtap="editTerm" data-id="{{item.id}}" data-name="{{item.name}}">改</view>
       <view class="btn sm danger" bindtap="delTerm" data-id="{{item.id}}">删</view>
     </view>
     <view class="row" style="margin-top:22rpx">

@@ -501,6 +501,7 @@ function renderSet(){
     +(S.terminals.length?S.terminals.map(t=>
         '<div class="tx"><div class="tx-l"><div class="tx-t">'+esc(t.name)+'</div>'
         +'<div class="tx-s">'+S.txns.filter(x=>x.terminalId===t.id).length+' 笔记录</div></div>'
+        +'<button class="btn sm ghost" onclick="renameTerm(\''+t.id+'\')">改</button>'
         +'<button class="btn sm danger" onclick="delTerm(\''+t.id+'\')">删</button></div>'
       ).join(''):'<div class="empty" style="padding:14px">还没有常用商户</div>')
     +'<div class="row" style="margin-top:11px"><input id="ntName" placeholder="商户名，如 楼下超市">'
@@ -592,8 +593,20 @@ function delPerson(id){
   S.people=o.people; S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
   save(); renderAll();
 }
-function addTerm(){const v=document.getElementById('ntName').value.trim();if(!v)return;
+function addTerm(){const v=CardCycleCore.normTermName(document.getElementById('ntName').value);if(!v)return;
   S.terminals.push({id:uid(),name:v,note:''});save();renderAll();}
+/* 商户改名：只动 name。历史消费靠 terminalId 关联，流水里自动跟着显示新名字。
+   写盘失败要把名字改回去——界面上留着一个没存进去的新名字比改名失败更误导人（小程序端同款）。 */
+function renameTerm(id){
+  const t=S.terminals.find(x=>x.id===id); if(!t)return;
+  const raw=prompt('改商户名', t.name); if(raw===null)return;
+  const v=CardCycleCore.normTermName(raw);
+  if(!v){alert('商户名不能为空');return;}
+  if(v===t.name)return;
+  const prev=t.name; t.name=v;
+  if(!save()){t.name=prev;return;}
+  renderAll();
+}
 function delTerm(id){if(!confirm('删除这个商户？'))return;
   S.terminals=S.terminals.filter(t=>t.id!==id);save();renderAll();}
 function delCard(id){

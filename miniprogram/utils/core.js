@@ -277,6 +277,16 @@
     return out;
   }
 
+  /**
+   * 商户名清洗（新增与改名共用，网页/小程序两端同一把尺子）。
+   * 去空白后为空返回 null，由调用方提示；上限 40 与 sanitizeState 一致——
+   * 否则改完看着存进去了，下次导入清洗时又被悄悄截短。
+   */
+  function normTermName(raw) {
+    const v = String(raw == null ? '' : raw).trim();
+    return v ? v.slice(0, 40) : null;
+  }
+
   /* ---------- 概览「最近变动」排序 ---------- */
   /**
    * 某张卡最后一次记账时刻（毫秒）。
@@ -462,6 +472,7 @@
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
            money, bufOf, parseAmount, calc, migrateRepaid, sanitizeState, pruneSeedTerminals,
+           normTermName,
            lastActTs, recentBand, recentCmp, txnCmp,
            removeCard, removePerson, pruneOrphans,
            buildReminders, buildICS, icsFold, utf8Len };

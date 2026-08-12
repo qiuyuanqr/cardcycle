@@ -61,6 +61,21 @@ Page({
     this.setData({ newTerm: '' });
     this.refresh();
   },
+  // 商户只有名字一个字段，用带输入框的弹窗就够，不值得再开一个页面。
+  // 改名只动 name，历史消费靠 terminalId 关联，流水里会自动跟着显示新名字。
+  editTerm(e) {
+    const { id, name } = e.currentTarget.dataset;
+    wx.showModal({
+      title: '改商户名', editable: true, content: name, placeholderText: '商户名，如 楼下超市',
+      success: r => {
+        if (!r.confirm) return;
+        if (store.renameTerm(this.S, id, r.content)) {
+          wx.showToast({ title: '已改名', icon: 'success' });
+          this.refresh();
+        }
+      }
+    });
+  },
   delTerm(e) {
     const id = e.currentTarget.dataset.id;
     wx.showModal({

@@ -505,3 +505,13 @@ test('sanitizeState：settings 白名单——乱值回默认，statementDay 夹
   assert.strictEqual(s.settings.multiUser, false, '只认 === true');
   assert.strictEqual(s.settings.lastBackup, null);
 });
+
+/* ---------- 商户名清洗 ---------- */
+test('normTermName：去空白、空名返回 null、超长截到 40', () => {
+  assert.strictEqual(C.normTermName('  楼下超市 '), '楼下超市');
+  assert.strictEqual(C.normTermName('   '), null);
+  assert.strictEqual(C.normTermName(''), null);
+  assert.strictEqual(C.normTermName(null), null);
+  assert.strictEqual(C.normTermName(undefined), null);
+  assert.strictEqual(C.normTermName('超'.repeat(50)).length, 40);
+});

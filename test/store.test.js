@@ -190,3 +190,45 @@ test('saveCardData：编辑失败时恢复改动前的字段', () => {
     { bank: '改了名', last4: '9999', statementDay: 28, buffer: 0, limit: 0 }), false);
   assert.deepStrictEqual(S.cards[0], before, '编辑回滚到改动前，逐字段一致');
 });
+
+/* ---------- 商户改名：只动名字，流水跟着变，写失败要回滚 ---------- */
+
+test('renameTerm：改名后历史消费显示新名字（消费记录一条没动）', () => {
+  const box = mockWx(REAL());
+  const S = store.load();
+  const txnBefore = JSON.parse(JSON.stringify(S.txns));
+  assert.strictEqual(store.renameTerm(S, 'm1', '  楼下超市  '), true, '前后空白会被去掉');
+  assert.strictEqual(S.terminals[0].name, '楼下超市');
+  assert.deepStrictEqual(S.txns, txnBefore, '改名不该碰任何一条消费');
+  assert.strictEqual(box.data.terminals[0].name, '楼下超市', '已落盘');
+  // 这一条消费本来就挂在 m1 上，明细页应当显示新名字
+  const S2 = store.normalize(box.data);
+  S2.txns[0].terminalId = 'm1';
+  assert.ok(store.cardTxData(S2, 'cA').rows.some(r => r.sub.indexOf('楼下超市') >= 0),
+    '流水页跟着显示新名字');
+});
+
+test('renameTerm：空名字拒绝，原名不动', () => {
+  mockWx(REAL());
+  const S = store.load();
+  assert.strictEqual(store.renameTerm(S, 'm1', '   '), false);
+  assert.strictEqual(S.terminals[0].name, '老张便利店', '原名保持不变');
+});
+
+test('renameTerm：写盘失败时名字回滚，界面不会显示一个没存进去的名字', () => {
+  const box = mockWx(REAL());
+  const S = store.load();
+  global.wx.setStorageSync = () => { throw new Error('storage write failed'); };
+  assert.strictEqual(store.renameTerm(S, 'm1', '楼下超市'), false);
+  assert.strictEqual(S.terminals[0].name, '老张便利店', '内存回滚');
+  assert.strictEqual(box.data.terminals[0].name, '老张便利店', '盘上也还是原名');
+});
+
+test('renameTerm：超长名字按 40 字截断，与 sanitizeState 同一把尺子', () => {
+  const box = mockWx(REAL());
+  const S = store.load();
+  assert.strictEqual(store.renameTerm(S, 'm1', '超'.repeat(50)), true);
+  assert.strictEqual(S.terminals[0].name.length, 40);
+  // 再过一遍清洗（模拟导出后重新导入）：名字不该被二次截短
+  assert.strictEqual(store.normalize(box.data).terminals[0].name, S.terminals[0].name);
+});
