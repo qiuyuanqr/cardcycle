@@ -33,6 +33,9 @@ Page({
   // 银行名/后四位/账单日录错了，在这张卡自己的页面上就能改，不用绕回设置页找
   goEdit() { wx.navigateTo({ url: '/pages/card/card?id=' + this.id }); },
 
+  // 刷完选错商户、记错金额或日期：进记消费页改这一笔，不必删了重记
+  edit(e) { wx.navigateTo({ url: '/pages/swipe/swipe?txId=' + e.currentTarget.dataset.id }); },
+
   del(e) {
     const { id, kind } = e.currentTarget.dataset;
     wx.showModal({

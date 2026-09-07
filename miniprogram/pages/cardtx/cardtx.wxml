@@ -42,6 +42,7 @@
         <view class="tx-s">{{item.kind === 'pay' ? '还款' : item.sub}}</view>
       </view>
       <text wx:if="{{item.kind === 'pay'}}" class="tag paid">还款</text>
+      <view wx:if="{{item.kind === 'tx'}}" class="btn sm ghost" bindtap="edit" data-id="{{item.id}}">改</view>
       <view class="btn sm danger" bindtap="del" data-id="{{item.id}}" data-kind="{{item.kind}}">删</view>
     </view>
   </view>

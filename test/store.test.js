@@ -232,3 +232,53 @@ test('renameTerm：超长名字按 40 字截断，与 sanitizeState 同一把尺
   // 再过一遍清洗（模拟导出后重新导入）：名字不该被二次截短
   assert.strictEqual(store.normalize(box.data).terminals[0].name, S.terminals[0].name);
 });
+
+/* ---------- 修改单笔消费（选错商户/金额/日期后不必删了重记） ---------- */
+
+test('txnForEdit：取出可编辑字段；不存在返回 null', () => {
+  mockWx(REAL());
+  const S = store.load();
+  S.txns[0].terminalId = 'm1'; S.txns[0].note = '午饭';
+  assert.deepStrictEqual(store.txnForEdit(S, 't1'),
+    { id: 't1', cardId: 'cA', terminalId: 'm1', date: '2026-07-20', amount: 800, note: '午饭' });
+  assert.strictEqual(store.txnForEdit(S, 'nope'), null);
+});
+
+test('updateTxn：改商户/金额/日期/备注原地生效，id 与记账时刻 ts 保持不变', () => {
+  const box = mockWx(REAL());
+  const S = store.load();
+  S.terminals.push({ id: 'm2', name: '楼下超市', note: '' });
+  assert.strictEqual(store.updateTxn(S, 't1',
+    { cardId: 'cA', terminalId: 'm2', date: '2026-07-21', amount: 12.5, note: ' 改过 ' }), true);
+  const t = S.txns[0];
+  assert.strictEqual(t.id, 't1'); assert.strictEqual(t.ts, 1, 'ts 不变：改记录不算新操作');
+  assert.strictEqual(t.terminalId, 'm2'); assert.strictEqual(t.amount, 12.5);
+  assert.strictEqual(t.date, '2026-07-21'); assert.strictEqual(t.note, '改过', '备注去空白');
+  assert.strictEqual(S.txns.length, 1, '不会多出一条');
+  assert.deepStrictEqual(box.data.txns[0], t, '已落盘');
+  assert.ok(store.cardTxData(S, 'cA').rows.some(r => r.sub.indexOf('楼下超市') >= 0));
+});
+
+test('updateTxn：金额/日期/卡不合法拒绝，原记录不动', () => {
+  mockWx(REAL());
+  const S = store.load();
+  const before = JSON.stringify(S.txns[0]);
+  for (const f of [{ amount: 0 }, { amount: 1.234 }, { amount: 'abc' },
+                   { date: '2026-13-01' }, { date: '' }, { cardId: 'ghost' }]) {
+    const fields = Object.assign({ cardId: 'cA', terminalId: 'm1', date: '2026-07-20', amount: 1, note: '' }, f);
+    assert.strictEqual(store.updateTxn(S, 't1', fields), false, JSON.stringify(f));
+    assert.strictEqual(JSON.stringify(S.txns[0]), before, '原记录分毫不动 ' + JSON.stringify(f));
+  }
+  assert.strictEqual(store.updateTxn(S, 'nope', { cardId: 'cA', date: '2026-07-20', amount: 1 }), false);
+});
+
+test('updateTxn：写盘失败回滚到改前，盘上与内存都是原记录', () => {
+  const box = mockWx(REAL());
+  const S = store.load();
+  global.wx.setStorageSync = () => { throw new Error('storage write failed'); };
+  assert.strictEqual(store.updateTxn(S, 't1',
+    { cardId: 'cA', terminalId: 'm1', date: '2026-07-22', amount: 999, note: 'x' }), false);
+  assert.strictEqual(S.txns[0].amount, 800, '内存回滚');
+  assert.strictEqual(S.txns[0].date, '2026-07-20');
+  assert.strictEqual(box.data.txns[0].amount, 800, '盘上也是原记录');
+});

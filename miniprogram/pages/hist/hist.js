@@ -59,6 +59,9 @@ Page({
     this.build(idx);
   },
 
+  // 刷完选错商户、记错金额或日期：进记消费页改这一笔，不必删了重记
+  edit(e) { wx.navigateTo({ url: '/pages/swipe/swipe?txId=' + e.currentTarget.dataset.id }); },
+
   del(e) {
     const { id, kind } = e.currentTarget.dataset;
     wx.showModal({

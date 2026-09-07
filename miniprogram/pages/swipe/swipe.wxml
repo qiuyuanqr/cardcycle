@@ -1,6 +1,6 @@
 <view class="wrap">
   <view class="card">
-    <view class="hint">周期归属按账单日自动计算。</view>
+    <view class="hint">{{editing ? '修改这一笔的商户、金额或日期，周期归属会按账单日重算。' : '周期归属按账单日自动计算。'}}</view>
 
     <block wx:if="{{styleList}}">
       <view class="lbl">用哪张卡</view>
@@ -58,6 +58,6 @@
 
     <view wx:if="{{warn}}" class="warnbox {{warn.level === 'bad' ? 'c-bad' : 'c-hot'}}">{{warn.text}}</view>
 
-    <view class="btn" style="margin-top:36rpx" bindtap="saveTx">保存</view>
+    <view class="btn" style="margin-top:36rpx" bindtap="saveTx">{{editing ? '保存修改' : '保存'}}</view>
   </view>
 </view>

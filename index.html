@@ -368,7 +368,7 @@ function cardHTML(c,k){
   return '<div class="card cc s-'+k.st+'">'+head
     +'<div class="cc-body"><div class="amt">¥'+money(amt)+'<small>待还</small></div>'+cd+'</div>'
     +'<div class="track"><div class="fill" style="width:'+k.pct+'%"></div></div>'
-    +'<div class="ticks"><span>'+md(k.winStart)+' 起可刷</span><span>'+md(k.due)+' 前还清</span></div>'
+    +'<div class="ticks"><span>'+CardCycleCore.winTicks(k).l+'</span><span>'+CardCycleCore.winTicks(k).r+'</span></div>'
     +'<div class="note'+(k.st==='bad'?' alert':'')+'">'+esc(k.hint)+'</div>'+futWarn
     +'<div class="acts"><button class="btn sm ghost" onclick="openSwipe(\''+c.id+'\')">记消费</button>'
     +'<button class="btn sm ghost" onclick="openRepay(\''+c.id+'\')">登记还款</button>'
@@ -414,6 +414,7 @@ function renderHist(){
         +'<button class="btn sm danger" onclick="delPay(\''+r.id+'\')">删</button></div>';
     return '<div class="tx"><div class="tx-l"><div class="tx-t">'+r.date+' &nbsp;¥'+money(r.amount)+'</div>'
       +'<div class="tx-s">'+esc(r.sub)+'</div></div>'
+      +'<button class="btn sm ghost" onclick="editTx(\''+r.id+'\')">改</button>'
       +'<button class="btn sm danger" onclick="delTx(\''+r.id+'\')">删</button></div>';
   }).join('')+'</div>';
   el.innerHTML=h;
@@ -717,19 +718,31 @@ function saveCard(id){
 }
 
 /* ---- 记一笔 ---- */
-let swipeCard='',swipeTerm='';
+let swipeCard='',swipeTerm='',swipeEdit=null;   // swipeEdit：正在修改的那笔消费（null = 新记一笔）
 function openSwipe(cid){
   if(!S.cards.length){alert('请先到「设置」添加信用卡。');return;}
+  swipeEdit=null;
   swipeCard=cid||S.cards[0].id;
   swipeTerm=S.terminals.length
     ? S.terminals.map(t=>({id:t.id,g:termLast(t.id)?diffD(pd(termLast(t.id)),today()):9999}))
         .sort((a,b)=>b.g-a.g)[0].id : '';
   drawSwipe();
 }
+/* 修改单笔消费：刷完选错商户/记错金额或日期，不必删了重记。
+   复用记消费弹窗，预填这笔的卡、商户、金额、日期、备注；保存时原地更新（id、ts 不变）。 */
+function editTx(id){
+  const t=S.txns.find(x=>x.id===id);
+  if(!t){alert('这笔记录不存在。');return;}
+  swipeEdit=t; swipeCard=cardById(t.cardId)?t.cardId:S.cards[0].id;
+  swipeTerm=termById(t.terminalId)?t.terminalId:(S.terminals.length?S.terminals[0].id:'');
+  drawSwipe();
+}
 function drawSwipe(){
-  const k=calc(cardById(swipeCard)),t0=today();
+  const k=calc(cardById(swipeCard)),t0=today(),ed=swipeEdit;
   let warn='';
-  if(k.toDue<=0) warn='<div class="hint" style="color:var(--bad)">注意：本期安全窗口已过（'
+  // 时段警告说的是「现在刷」；改一笔旧账不涉及现在刷不刷，不显示
+  if(ed) warn='';
+  else if(k.toDue<=0) warn='<div class="hint" style="color:var(--bad)">注意：本期安全窗口已过（'
     +(k.toAnchor===0?'今天就是账单日':'距账单日只剩 '+k.toAnchor+' 天')
     +'），现在刷会计入 '+md(k.anchor)+' 的账单。建议等 '+md(addD(k.anchor,1))+' 起再刷。</div>';
   else if(k.toDue<=1) warn='<div class="hint" style="color:var(--hot)">注意：本期还款截止 '+md(k.due)+'，现在刷的钱也要在那之前还清。</div>';
@@ -754,16 +767,17 @@ function drawSwipe(){
     :'<div class="chips">'
       +termRows.map(o=>'<div class="chip'+(o.tm.id===swipeTerm?' on':'')+'" onclick="swipeTerm=\''+o.tm.id+'\';drawSwipe()">'
         +esc(o.tm.name)+'<small>'+(o.g===null?'本卡未用过':'本卡 '+o.g+' 天前')+'</small></div>').join('')+'</div>';
-  showModal('<h3>记一笔消费</h3><div class="hint">周期归属按账单日自动计算。</div>'
+  showModal('<h3>'+(ed?'修改消费':'记一笔消费')+'</h3><div class="hint">'
+    +(ed?'修改这一笔的商户、金额或日期，周期归属会按账单日重算。':'周期归属按账单日自动计算。')+'</div>'
     +'<label>用哪张卡</label>'+cardPick
     +(S.terminals.length
       ?'<label>在哪个商户 <span style="color:var(--faint);font-weight:400">· 已按闲置排序</span></label>'+termPick
       :'<div class="hint" style="margin-top:12px">还没添加商户，可以先只记金额。</div>')
-    +'<div class="two"><div><label>金额</label><input id="sAmt" type="number" step="0.01" inputmode="decimal" placeholder="0.00"></div>'
-    +'<div><label>日期</label><input id="sDate" type="date" value="'+fd(t0)+'"></div></div>'
-    +'<label>备注（选填）</label><input id="sNote">'+warn
+    +'<div class="two"><div><label>金额</label><input id="sAmt" type="number" step="0.01" inputmode="decimal" placeholder="0.00" value="'+(ed?ed.amount:'')+'"></div>'
+    +'<div><label>日期</label><input id="sDate" type="date" value="'+(ed?ed.date:fd(t0))+'"></div></div>'
+    +'<label>备注（选填）</label><input id="sNote" value="'+esc(ed?ed.note||'':'')+'">'+warn
     +'<div class="macts"><button class="btn ghost" onclick="closeModal()">取消</button>'
-    +'<button class="btn" onclick="saveSwipe()">保存</button></div>');
+    +'<button class="btn" onclick="saveSwipe()">'+(ed?'保存修改':'保存')+'</button></div>');
 }
 function saveSwipe(){
   // parseAmount 拦掉 Infinity（1e999 在 number 框里敲得出来，JSON 存完变 null、金额归零）
@@ -772,6 +786,14 @@ function saveSwipe(){
   if(a==null){alert('金额不对：请填大于 0 的数字，最多两位小数。');return;}
   const dt=document.getElementById('sDate').value||fd(today());
   if(dt>fd(today()) && !confirm(dt+' 是未来的日期，确定这样记录吗？')) return;
+  if(swipeEdit){
+    // 原地更新，id 与记账时刻 ts 不变（改记录不算新操作）；写盘失败回滚到改前
+    const t=swipeEdit,prev=Object.assign({},t);
+    t.cardId=swipeCard;t.terminalId=swipeTerm;t.date=dt;t.amount=a;
+    t.note=document.getElementById('sNote').value.trim();
+    if(!save()){Object.assign(t,prev);return;}
+    swipeEdit=null;closeModal();renderAll();return;
+  }
   S.txns.push({id:uid(),cardId:swipeCard,terminalId:swipeTerm,
     date:dt,amount:a,
     note:document.getElementById('sNote').value.trim(),ts:Date.now()});

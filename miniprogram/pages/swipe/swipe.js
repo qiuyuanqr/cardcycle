@@ -5,7 +5,8 @@ Page({
   data: {
     cards: [], terms: [], selCard: '', selTerm: '',
     amount: '', date: '', todayStr: '', note: '', warn: null,
-    styleList: false, cardNames: [], cardIdx: 0, termNames: [], termIdx: 0
+    styleList: false, cardNames: [], cardIdx: 0, termNames: [], termIdx: 0,
+    editing: false      // 带 txId 进来 = 修改已有的一笔（选错商户/记错金额后不必删了重记）
   },
 
   onLoad(q) {
@@ -19,29 +20,45 @@ Page({
       });
       return;
     }
-    const selCard = q.cardId && store.cardById(S, q.cardId) ? q.cardId : S.cards[0].id;
     const t = Core.fd(Core.today());
-    this.setData({ date: t, todayStr: t, styleList: S.settings.swipeStyle === 'list' });
-    this.select(selCard);
+    const tx = q.txId ? store.txnForEdit(S, q.txId) : null;
+    if (q.txId && !tx) {
+      wx.showToast({ title: '这笔记录不存在', icon: 'none' });
+      setTimeout(() => wx.navigateBack(), 600);
+      return;
+    }
+    const selCard = tx ? tx.cardId
+      : q.cardId && store.cardById(S, q.cardId) ? q.cardId : S.cards[0].id;
+    this.txId = tx ? tx.id : null;
+    this.setData({ date: tx ? tx.date : t, todayStr: t, editing: !!tx,
+                   amount: tx ? String(tx.amount) : '', note: tx ? tx.note : '',
+                   styleList: S.settings.swipeStyle === 'list' });
+    if (tx) wx.setNavigationBarTitle({ title: '修改消费' });
+    this.select(selCard, tx ? tx.terminalId : null);
   },
 
-  select(cardId) {
+  // keepTerm：编辑时预选这笔原来的商户（新记一笔仍默认最闲置的那个）
+  select(cardId, keepTerm) {
     const S = this.S;
     const opt = store.swipeOptions(S, cardId);
+    let termIdx = keepTerm ? opt.terms.findIndex(t => t.id === keepTerm) : -1;
+    if (termIdx < 0) termIdx = 0;
     this.setData({
       cards: opt.cards, terms: opt.terms, selCard: cardId,
-      selTerm: opt.terms.length ? opt.terms[0].id : '',
+      selTerm: opt.terms.length ? opt.terms[termIdx].id : '',
       cardNames: opt.cards.map(c => c.label + '（' + c.sub + '）'),
       cardIdx: Math.max(0, opt.cards.findIndex(c => c.id === cardId)),
       termNames: opt.terms.map(t => t.name + '（' + t.sub + '）'),
-      termIdx: 0,
-      warn: store.swipeWarning(S, cardId)
+      termIdx,
+      // 时段警告说的是「现在刷」；改一笔旧账不涉及现在刷不刷，不显示
+      warn: this.data.editing ? null : store.swipeWarning(S, cardId)
     });
   },
 
-  tapCard(e) { this.select(e.currentTarget.dataset.id); },
+  // 编辑时换卡不丢已选商户（用户多半只想改其中一项）；新记一笔仍默认最闲置的商户
+  tapCard(e) { this.select(e.currentTarget.dataset.id, this.data.editing ? this.data.selTerm : null); },
   tapTerm(e) { this.setData({ selTerm: e.currentTarget.dataset.id }); },
-  pickCard(e) { this.select(this.data.cards[+e.detail.value].id); },
+  pickCard(e) { this.select(this.data.cards[+e.detail.value].id, this.data.editing ? this.data.selTerm : null); },
   pickTerm(e) {
     const i = +e.detail.value;
     this.setData({ termIdx: i, selTerm: this.data.terms[i].id });
@@ -57,6 +74,13 @@ Page({
     if (amt == null) { wx.showToast({ title: '金额不对：大于 0，最多两位小数', icon: 'none' }); return; }
     const doSave = () => {
       const S = this.S;
+      if (this.txId) {
+        if (!store.updateTxn(S, this.txId, { cardId: d.selCard, terminalId: d.selTerm,
+              date: d.date || d.todayStr, amount: amt, note: d.note })) return;
+        wx.showToast({ title: '已修改', icon: 'success' });
+        setTimeout(() => wx.navigateBack(), 600);
+        return;
+      }
       S.txns.push({
         id: store.uid(), cardId: d.selCard, terminalId: d.selTerm,
         date: d.date || d.todayStr, amount: amt,

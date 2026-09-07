@@ -515,3 +515,22 @@ test('normTermName：去空白、空名返回 null、超长截到 40', () => {
   assert.strictEqual(C.normTermName(undefined), null);
   assert.strictEqual(C.normTermName('超'.repeat(50)).length, 40);
 });
+
+test('winTicks：进度条两端文案——过了还款截止就报下一窗口，别再显示上个月「起可刷」', () => {
+  const card = { id: 'c', statementDay: 9, buffer: 3 };   // 周期 8/10–9/9，due 9/6
+  // 周期中段：窗口仍开着，照常显示起点与截止
+  let t = C.winTicks(C.calc(card, [], [], SETTINGS, C.pd('2026-08-20')));
+  assert.deepStrictEqual(t, { l: '8月10日 起可刷', r: '9月6日 前还清' });
+  // 截止当天（toDue=0）：还能还，但已不该再刷——左标指向下一窗口
+  t = C.winTicks(C.calc(card, [], [], SETTINGS, C.pd('2026-09-06')));
+  assert.deepStrictEqual(t, { l: '9月10日 起再刷', r: '9月6日 前还清' });
+  // 已超期（toDue<0）：截止已过，右标改成账单日
+  t = C.winTicks(C.calc(card, [], [], SETTINGS, C.pd('2026-09-07')));
+  assert.deepStrictEqual(t, { l: '9月10日 起再刷', r: '9月9日 出账单' });
+  // 账单日当天
+  t = C.winTicks(C.calc(card, [], [], SETTINGS, C.pd('2026-09-09')));
+  assert.deepStrictEqual(t, { l: '9月10日 起再刷', r: '9月9日 出账单' });
+  // 次日进入新周期，恢复正常
+  t = C.winTicks(C.calc(card, [], [], SETTINGS, C.pd('2026-09-10')));
+  assert.deepStrictEqual(t, { l: '9月10日 起可刷', r: '10月6日 前还清' });
+});

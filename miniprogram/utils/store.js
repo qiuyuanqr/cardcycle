@@ -9,7 +9,7 @@ const Core = require('./core.js');
    微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
    靠它判断不了手上跑的是哪一版，所以这里硬编码。
    ★ 每次 cli upload 改 -v 时，这里要同步改。 */
-const APP_VERSION = '1.0.21';
+const APP_VERSION = '1.0.22';
 
 const KEY = 'cardcycle.v1';
 const DEF = {
@@ -140,8 +140,8 @@ function cardView(S, c) {
         + (c.limit ? ' · 额度 ¥' + Core.money(c.limit) : ''),
     amt: Core.money(amt), hasAmt: amt > 0,
     pct: k.pct, hint: k.hint,
-    tickL: Core.md(k.winStart) + ' 起可刷',
-    tickR: Core.md(k.due) + ' 前还清',
+    tickL: Core.winTicks(k).l,
+    tickR: Core.winTicks(k).r,
     idle: k.st === 'idle',
     rank: RANK[k.st], toDue: k.toDue,
     // 日期录到未来周期的消费不进待还、却按顺序占还款额度（存款会无声变少）——必须明示
@@ -341,9 +341,44 @@ function renameTerm(S, id, raw) {
   return true;
 }
 
+/* 修改单笔消费：刷完选错商户/记错金额或日期，不必删了重记。
+   取出可编辑字段给记消费页预填；不存在返回 null。 */
+function txnForEdit(S, id) {
+  const t = S.txns.find(x => x.id === id);
+  if (!t) return null;
+  return { id: t.id, cardId: t.cardId, terminalId: t.terminalId || '',
+           date: t.date, amount: t.amount, note: t.note || '' };
+}
+
+/* 原地更新：id 与记账时刻 ts 不变（改记录不算一次新操作，「最近变动」排序不受影响）。
+   金额/日期/卡走与新增同样的校验；与 saveCardData 同款快照事务，写盘失败回滚。
+   fields = {cardId, terminalId, date, amount, note}（amount 已是数值或原始输入均可）。
+   成功返回 true，供页面提示并返回。 */
+function updateTxn(S, id, fields) {
+  const t = S.txns.find(x => x.id === id);
+  if (!t) return false;
+  const amt = Core.parseAmount(fields.amount);
+  if (amt == null) { wx.showToast({ title: '金额不对：大于 0，最多两位小数', icon: 'none' }); return false; }
+  if (!Core.okDate(fields.date)) { wx.showToast({ title: '日期不对', icon: 'none' }); return false; }
+  if (!cardById(S, fields.cardId)) { wx.showToast({ title: '请选择信用卡', icon: 'none' }); return false; }
+  const prev = Object.assign({}, t);
+  t.cardId = fields.cardId;
+  t.terminalId = fields.terminalId || '';
+  t.date = fields.date;
+  t.amount = amt;
+  t.note = String(fields.note || '').trim();
+  if (!save(S)) {
+    Object.assign(t, prev);
+    wx.showModal({ title: '没能保存', showCancel: false,
+      content: '这笔修改没有写入本机存储，请退出小程序重新进入后再试。' });
+    return false;
+  }
+  return true;
+}
+
 module.exports = {
   Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe, saveCardData, renameTerm,
   cardById, termById, cardLabel, termLast, termLastFor,
   cardView, dashData, swipeOptions, swipeWarning,
-  cardTxData, repayInfo, applyRepay
+  cardTxData, repayInfo, applyRepay, txnForEdit, updateTxn
 };

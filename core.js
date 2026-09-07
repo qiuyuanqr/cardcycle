@@ -78,6 +78,11 @@
     return c / 100;
   }
 
+  // 真实存在的 'YYYY-MM-DD'（2026-02-30 这种经 pd/fd 往返会变形，直接判掉）
+  function okDate(v) {
+    return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && fd(pd(v)) === v;
+  }
+
   /* ---------- 周期计算 ---------- */
   // 该卡的还款提前天数（卡未单独设置时用全局默认）
   // 0 是合法值（账单日当天才还），只有真的没设过才回落到 3——不能用 || 判空
@@ -167,6 +172,20 @@
              pct: total > 0 ? Math.round(gone / total * 100) : 0 };
   }
 
+  /**
+   * 概览卡片进度条两端的文案（网页与小程序共用，两端才不会各说各话）。
+   * 周期中段：左「窗口起点 起可刷」、右「还款截止 前还清」。
+   * 一旦过了还款截止（toDue<=0），本期窗口已关，左边还写「8月10日 起可刷」
+   * 会让人以为在催他刷卡——改成下一窗口「账单日次日 起再刷」，与闲置卡、
+   * 记消费页的警告同一口径；截止日也过了（toDue<0）时右边改报账单日。
+   */
+  function winTicks(k) {
+    return {
+      l: k.toDue <= 0 ? md(addD(k.anchor, 1)) + ' 起再刷' : md(k.winStart) + ' 起可刷',
+      r: k.toDue <  0 ? md(k.anchor) + ' 出账单'           : md(k.due) + ' 前还清'
+    };
+  }
+
   /* ---------- 旧数据迁移 ---------- */
   /**
    * 2.2 以前的数据是逐笔标记 repaid，迁移成「消费 + 还款」两本流水：
@@ -209,7 +228,6 @@
     const fixId = v => okId(v) ? v : (idMap[String(v)] || (idMap[String(v)] = newId()));
     const refId = v => okId(v) ? v : (idMap[String(v)] || null);   // 引用跟着映射走，找不到就置空（pruneOrphans 收拾）
     const str   = (v, max) => String(v == null ? '' : v).slice(0, max);
-    const okDate = v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && fd(pd(v)) === v;
     const posAmt = v => { const n = Number(v); return isFinite(n) && n > 0 ? n : null; };
     const intOr  = (v, lo, hi, dft) => {
       const n = Math.floor(Number(v));
@@ -471,7 +489,7 @@
   }
 
   return { DAY, today, pd, fd, md, addD, diffD, clampDay, nextStmt, prevStmt,
-           money, bufOf, parseAmount, calc, migrateRepaid, sanitizeState, pruneSeedTerminals,
+           okDate, money, bufOf, parseAmount, calc, winTicks, migrateRepaid, sanitizeState, pruneSeedTerminals,
            normTermName,
            lastActTs, recentBand, recentCmp, txnCmp,
            removeCard, removePerson, pruneOrphans,
