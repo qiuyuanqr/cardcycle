@@ -45,10 +45,7 @@ Page({
         : '删除这条消费记录？已登记的还款不受影响，待还金额会自动重算。',
       success: r => {
         if (!r.confirm) return;
-        const S = this.S;
-        if (kind === 'pay') S.payments = S.payments.filter(x => x.id !== id);
-        else S.txns = S.txns.filter(x => x.id !== id);
-        store.save(S);
+        store.deleteRecord(this.S, kind, id);   // 失败已回滚并提示；refresh 重读盘
         this.refresh();
       }
     });

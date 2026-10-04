@@ -9,7 +9,7 @@ const Core = require('./core.js');
    微信的 getAccountInfoSync().miniProgram.version 在开发版/体验版返回空字符串，
    靠它判断不了手上跑的是哪一版，所以这里硬编码。
    ★ 每次 cli upload 改 -v 时，这里要同步改。 */
-const APP_VERSION = '1.0.22';
+const APP_VERSION = '1.0.23';
 
 const KEY = 'cardcycle.v1';
 const DEF = {
@@ -376,9 +376,83 @@ function updateTxn(S, id, fields) {
   return true;
 }
 
+/* ---- 其余写路径：统一的快照事务 ----
+   上面几个函数各自手写了「改前存快照、save 失败就还原」。下面这些次要写路径
+   （加删商户、删流水/卡片、排序/样式、备份时间、导入）共用同一个 commit：
+   改前整份快照，mutate 之后 save，失败则整份还原并提示，返回 false。
+   页面只在返回 true 时才提示成功，不会再出现「界面说已删除、盘上其实还在」。 */
+const DATA_KEYS = ['people', 'cards', 'terminals', 'txns', 'payments', 'settings'];
+
+function failModal(what) {
+  wx.showModal({ title: '没能保存', showCancel: false,
+    content: what + '没有写入本机存储，请退出小程序重新进入后再试。' });
+}
+
+function commit(S, what, mutate) {
+  const snap = {};
+  DATA_KEYS.forEach(k => { snap[k] = clone(S[k]); });
+  mutate();
+  if (save(S)) return true;
+  DATA_KEYS.forEach(k => { S[k] = snap[k]; });
+  failModal(what);
+  return false;
+}
+
+function addTerm(S, raw) {
+  const name = Core.normTermName(raw);
+  if (!name) return false;
+  return commit(S, '这个商户', () => { S.terminals.push({ id: uid(), name, note: '' }); });
+}
+
+function delTerm(S, id) {
+  return commit(S, '这次删除', () => { S.terminals = S.terminals.filter(t => t.id !== id); });
+}
+
+/* 删单条流水。kind: 'pay' 删还款，其余删消费 */
+function deleteRecord(S, kind, id) {
+  return commit(S, '这次删除', () => {
+    if (kind === 'pay') S.payments = S.payments.filter(x => x.id !== id);
+    else S.txns = S.txns.filter(x => x.id !== id);
+  });
+}
+
+/* 消费和还款必须一起删：只删消费会留下孤儿还款，流水汇总会凭空多出存款 */
+function deleteCard(S, id) {
+  return commit(S, '这次删除', () => {
+    const out = Core.removeCard(S.cards, S.txns, S.payments, id);
+    S.cards = out.cards; S.txns = out.txns; S.payments = out.payments;
+  });
+}
+
+function setSetting(S, key, val) {
+  return commit(S, '这项设置', () => { S.settings[key] = val; });
+}
+
+function moveCard(S, id, dir) {
+  const i = S.cards.findIndex(c => c.id === id);
+  const j = i + (dir === 'up' ? -1 : 1);
+  if (i < 0 || j < 0 || j >= S.cards.length) return false;
+  return commit(S, '这次排序', () => {
+    const t = S.cards[i]; S.cards[i] = S.cards[j]; S.cards[j] = t;
+  });
+}
+
+function markBackup(S, dateStr) {
+  return commit(S, '备份时间', () => { S.settings.lastBackup = dateStr; });
+}
+
+/* 导入备份：先 normalize（旧版备份要迁移成消费+还款两本账）再落盘。
+   写盘失败返回 null，当前数据原封不动；成功返回新的整份数据。 */
+function importBackup(d) {
+  const S = normalize(d);
+  if (!save(S)) { failModal('导入的数据'); return null; }
+  return S;
+}
+
 module.exports = {
   Core, KEY, DEF, load, save, normalize, storageEnv, uid, ensureMe, saveCardData, renameTerm,
   cardById, termById, cardLabel, termLast, termLastFor,
   cardView, dashData, swipeOptions, swipeWarning,
-  cardTxData, repayInfo, applyRepay, txnForEdit, updateTxn
+  cardTxData, repayInfo, applyRepay, txnForEdit, updateTxn,
+  addTerm, delTerm, deleteRecord, deleteCard, setSetting, moveCard, markBackup, importBackup
 };

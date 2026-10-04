@@ -285,6 +285,16 @@ function save(){                                   // 返回是否真的写进�
   try{ localStorage.setItem(KEY,JSON.stringify(S)); return true; }
   catch(e){ alert('保存失败：'+e.message+'\n\n请到「设置」导出备份，避免数据丢失。'); return false; }
 }
+/* 次要写路径的快照事务：改前整份快照，mutate 后 save，失败就整份还原（含 loadFailed）。
+   调用方照旧 renderAll()——失败时它画的是回滚后的状态，不会显示一个没存上的改动
+   （小程序端 store.commit 同款）。返回是否真的写进了盘。 */
+function commit(mutate){
+  const snap=structuredClone(S), lf=loadFailed;
+  mutate();
+  if(save()) return true;
+  S=snap; loadFailed=lf;
+  return false;
+}
 function uid(){ return Math.random().toString(36).slice(2,10); }
 
 /* ---------- UI 工具 ---------- */
@@ -421,11 +431,11 @@ function renderHist(){
 }
 function delTx(id){
   if(!confirm('删除这条消费记录？已登记的还款不受影响，待还金额会自动重算。')) return;
-  S.txns=S.txns.filter(x=>x.id!==id); save(); renderAll();
+  commit(()=>{S.txns=S.txns.filter(x=>x.id!==id);}); renderAll();
 }
 function delPay(id){
   if(!confirm('删除这条还款记录？待还金额会相应增加。')) return;
-  S.payments=S.payments.filter(x=>x.id!==id); save(); renderAll();
+  commit(()=>{S.payments=S.payments.filter(x=>x.id!==id);}); renderAll();
 }
 
 /* =====================================================================
@@ -578,24 +588,25 @@ function toggleMulti(){
       alert('目前有 '+S.people.length+' 个持卡人。请先把卡片都归到一个人名下并删除其余持卡人，再关闭多人管理。');
       return;
     }
-    S.settings.multiUser=false;
+    commit(()=>{S.settings.multiUser=false;});
   }else{
-    S.settings.multiUser=true;
-    ensureMe();
+    commit(()=>{S.settings.multiUser=true; ensureMe();});
   }
-  save();renderAll();
+  renderAll();
 }
 function addPerson(){const v=document.getElementById('npName').value.trim();if(!v)return;
-  S.people.push({id:uid(),name:v});save();renderAll();}
+  commit(()=>{S.people.push({id:uid(),name:v});});renderAll();}
 function delPerson(id){
   const n=S.cards.filter(c=>c.personId===id).length;
   if(!confirm(n?'此人名下 '+n+' 张卡及其全部消费、还款记录将一并删除，确定？':'删除这个持卡人？'))return;
-  const o=CardCycleCore.removePerson(S.people,S.cards,S.txns,S.payments,id);
-  S.people=o.people; S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
-  save(); renderAll();
+  commit(()=>{
+    const o=CardCycleCore.removePerson(S.people,S.cards,S.txns,S.payments,id);
+    S.people=o.people; S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
+  });
+  renderAll();
 }
 function addTerm(){const v=CardCycleCore.normTermName(document.getElementById('ntName').value);if(!v)return;
-  S.terminals.push({id:uid(),name:v,note:''});save();renderAll();}
+  commit(()=>{S.terminals.push({id:uid(),name:v,note:''});});renderAll();}
 /* 商户改名：只动 name。历史消费靠 terminalId 关联，流水里自动跟着显示新名字。
    写盘失败要把名字改回去——界面上留着一个没存进去的新名字比改名失败更误导人（小程序端同款）。 */
 function renameTerm(id){
@@ -609,16 +620,18 @@ function renameTerm(id){
   renderAll();
 }
 function delTerm(id){if(!confirm('删除这个商户？'))return;
-  S.terminals=S.terminals.filter(t=>t.id!==id);save();renderAll();}
+  commit(()=>{S.terminals=S.terminals.filter(t=>t.id!==id);});renderAll();}
 function delCard(id){
   const n=S.txns.filter(t=>t.cardId===id).length;
   const m=S.payments.filter(p=>p.cardId===id).length;
   const what=[n?n+' 条消费':'',m?m+' 条还款':''].filter(Boolean).join('、');
   if(!confirm('删除这张卡'+(what?'及其 '+what+'记录':'')+'？'))return;
   // 消费和还款必须一起删：只删消费会留下孤儿还款，流水汇总会凭空多出存款
-  const o=CardCycleCore.removeCard(S.cards,S.txns,S.payments,id);
-  S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
-  save();renderAll();
+  commit(()=>{
+    const o=CardCycleCore.removeCard(S.cards,S.txns,S.payments,id);
+    S.cards=o.cards; S.txns=o.txns; S.payments=o.payments;
+  });
+  renderAll();
 }
 function toast(t){
   let el=document.getElementById('toast');
@@ -635,18 +648,20 @@ function setParam(key,max,dft,label,v){
   if(!(n>=0)){renderAll();toast('已恢复为修改前的 '+old+' 天');return;}
   const val=Math.min(max,n);
   if(val===old){renderAll();return;}
-  S.settings[key]=val;save();renderAll();
+  const ok=commit(()=>{S.settings[key]=val;});
+  renderAll();
+  if(!ok){toast('没能保存，已恢复为 '+old+' 天');return;}   // 写盘失败：别再说「已保存」
   toast(val<n?label+'最多 '+max+' 天，已按 '+max+' 保存':'已保存 '+val+' 天');
 }
 function setBuffer(v){setParam('buffer',15,3,'提前天数',v)}
 function setGap(v){setParam('minGap',60,7,'间隔',v)}
-function setCardSort(v){S.settings.cardSort=v;save();renderAll();}
-function setSwipeStyle(v){S.settings.swipeStyle=v;save();renderAll();}
+function setCardSort(v){commit(()=>{S.settings.cardSort=v;});renderAll();}
+function setSwipeStyle(v){commit(()=>{S.settings.swipeStyle=v;});renderAll();}
 function moveCard(id,d){
   const i=S.cards.findIndex(c=>c.id===id),j=i+d;
   if(i<0||j<0||j>=S.cards.length)return;
-  const t=S.cards[i];S.cards[i]=S.cards[j];S.cards[j]=t;
-  save();renderAll();
+  commit(()=>{const t=S.cards[i];S.cards[i]=S.cards[j];S.cards[j]=t;});
+  renderAll();
 }
 
 /* =====================================================================
@@ -846,7 +861,7 @@ function dl(blob,name){
   document.body.appendChild(a);a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},200);
 }
-function markBackup(){S.settings.lastBackup=fd(today());save();}
+function markBackup(){commit(()=>{S.settings.lastBackup=fd(today());});}
 
 // 读失败时 S 是空壳：导出的「备份」看着正常其实是空的，拿去覆盖好备份就真丢了（小程序端同款拦截）
 function exportBlocked(){
@@ -905,10 +920,12 @@ function applyImport(txt){
   catch(e){ alert('内容不是有效的备份数据，请确认完整复制了全部文字。'); return false; }
   if(!d || !Array.isArray(d.cards)){ alert('这段数据里没有信用卡信息，可能不是本工具的备份。'); return false; }
   if(!confirm('将导入 '+d.cards.length+' 张卡、'+(d.txns||[]).length+' 条记录，覆盖当前数据。确定？')) return false;
+  const prevS=S, prevLF=loadFailed;                  // 写盘失败要原样退回，不能留着一份没存上的「导入结果」
   S=normalize(d);                                    // 旧版备份自动迁移成消费+还款两本账
   loadFailed=false;                                  // 导入是用户明确的覆盖动作，也是读失败后的恢复手段
   if(S.people.length>1) S.settings.multiUser=true;   // 多人备份自动进多人模式
-  save(); closeModal(); go('dash');
+  if(!save()){ S=prevS; loadFailed=prevLF; return false; }   // 失败不关弹窗，也不报「导入成功」
+  closeModal(); go('dash');
   alert('导入成功。'); return true;
 }
 function doImport(){ applyImport(document.getElementById('impBox').value); }
@@ -922,7 +939,10 @@ function wipe(){
   if(!confirm('将删除本机的 '+S.cards.length+' 张信用卡、'+S.terminals.length+' 个商户、'
     +S.txns.length+' 条消费、'+S.payments.length+' 条还款记录（含存款），无法恢复。建议先导出备份。确定清空？'))return;
   if(!confirm('再确认一次：数据清空后无法找回，真的要清空？'))return;
-  S=structuredClone(DEF);loadFailed=false;save();renderAll();   // 清空是用户明确的动作，不受读失败拦截
+  const prevS=S, prevLF=loadFailed;
+  S=structuredClone(DEF);loadFailed=false;   // 清空是用户明确的动作，不受读失败拦截
+  if(!save()){ S=prevS; loadFailed=prevLF; }   // 没清成就退回原数据，别让界面显示一个盘上没有的空账本
+  renderAll();
 }
 
 /* =====================================================================

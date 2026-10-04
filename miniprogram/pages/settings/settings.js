@@ -53,11 +53,10 @@ Page({
   /* ---- 商户 ---- */
   onNewTerm(e) { this.setData({ newTerm: e.detail.value }); },
   addTerm() {
-    const v = (this.data.newTerm || '').trim();
-    if (!v) return;
-    const S = this.S;
-    S.terminals.push({ id: store.uid(), name: v, note: '' });
-    store.save(S);
+    if (!store.addTerm(this.S, this.data.newTerm)) {
+      this.refresh();            // 写失败已回滚并提示，输入框保留，让用户重试
+      return;
+    }
     this.setData({ newTerm: '' });
     this.refresh();
   },
@@ -82,9 +81,8 @@ Page({
       title: '删除商户', content: '相关消费记录会保留，但不再显示商户名。',
       success: r => {
         if (!r.confirm) return;
-        const S = this.S;
-        S.terminals = S.terminals.filter(t => t.id !== id);
-        store.save(S); this.refresh();
+        store.delTerm(this.S, id);   // 失败已回滚并提示；refresh 重读盘，界面与盘一致
+        this.refresh();
       }
     });
   },
@@ -119,25 +117,16 @@ Page({
     else wx.showToast({ title: '已保存 ' + v + ' 天', icon: 'success' });
   },
   onSort(e) {
-    const S = this.S;
-    S.settings.cardSort = SORT_KEYS[+e.detail.value] || 'smart';
-    store.save(S);
+    store.setSetting(this.S, 'cardSort', SORT_KEYS[+e.detail.value] || 'smart');
     this.refresh();
   },
   onStyle(e) {
-    const S = this.S;
-    S.settings.swipeStyle = STYLE_KEYS[+e.detail.value] || 'chips';
-    store.save(S);
+    store.setSetting(this.S, 'swipeStyle', STYLE_KEYS[+e.detail.value] || 'chips');
     this.refresh();
   },
   moveCard(e) {
     const { id, dir } = e.currentTarget.dataset;
-    const S = this.S;
-    const i = S.cards.findIndex(c => c.id === id);
-    const j = i + (dir === 'up' ? -1 : 1);
-    if (i < 0 || j < 0 || j >= S.cards.length) return;
-    const t = S.cards[i]; S.cards[i] = S.cards[j]; S.cards[j] = t;
-    store.save(S);
+    store.moveCard(this.S, id, dir);
     this.refresh();
   },
 
@@ -178,8 +167,7 @@ Page({
     wx.setClipboardData({
       data: text,
       success: () => {
-        S.settings.lastBackup = Core.fd(Core.today());
-        store.save(S); this.refresh();
+        store.markBackup(S, Core.fd(Core.today())); this.refresh();   // 只是备份时间，失败已回滚并提示
         wx.showModal({
           title: '已复制到剪贴板',
           content: '这份备份约 ' + kb + ' KB（' + S.txns.length + ' 笔消费、'
@@ -215,8 +203,7 @@ Page({
     wx.shareFileMessage({
       filePath: path, fileName: name,
       success: () => {
-        S.settings.lastBackup = Core.fd(Core.today());
-        store.save(S); this.refresh();
+        store.markBackup(S, Core.fd(Core.today())); this.refresh();
         wx.showToast({ title: '备份文件已发出', icon: 'success' });
       },
       fail: err => {
@@ -261,10 +248,10 @@ Page({
              + (d.payments || []).length + ' 笔还款，覆盖当前全部数据。确定？',
       success: r => {
         if (!r.confirm) return;
-        // 必须走 normalize：2.2 以前的备份没有 payments、只有逐笔 repaid 标记，
+        // importBackup 内部走 normalize：2.2 以前的备份没有 payments、只有逐笔 repaid 标记，
         // 不迁移就等于把已还的钱全变回待还，而且存盘后再也没有补救机会。
-        const S = store.normalize(d);
-        store.save(S);
+        // 写盘失败返回 null：当前数据原封不动，绝不能再报「导入成功」
+        if (!store.importBackup(d)) return;
         this.refresh();
         wx.showToast({ title: '导入成功', icon: 'success' });
       }

@@ -77,10 +77,7 @@ Page({
       confirmColor: '#e0384a',
       success: r => {
         if (!r.confirm) return;
-        // 消费和还款必须一起删：只删消费会留下孤儿还款，流水汇总会凭空多出存款
-        const out = Core.removeCard(S.cards, S.txns, S.payments, this.id);
-        S.cards = out.cards; S.txns = out.txns; S.payments = out.payments;
-        store.save(S);
+        if (!store.deleteCard(S, this.id)) return;   // 没删成就留在本页，别返回后让人以为删了
         wx.navigateBack();
       }
     });

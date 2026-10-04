@@ -282,3 +282,78 @@ test('updateTxn：写盘失败回滚到改前，盘上与内存都是原记录',
   assert.strictEqual(S.txns[0].date, '2026-07-20');
   assert.strictEqual(box.data.txns[0].amount, 800, '盘上也是原记录');
 });
+
+/* ---- M-a：其余写路径统一走快照事务（写盘失败 → 内存回滚 + 返回 false） ---- */
+const FULL = () => {
+  const d = REAL();
+  d.people.push({ id: 'p2', name: '家人' });
+  d.cards.push({ id: 'cB', bank: '招行', last4: '5678', statementDay: 20, buffer: 3, personId: 'p2' });
+  d.terminals.push({ id: 'm2', name: '菜市场', note: '' });
+  d.txns.push({ id: 't2', cardId: 'cB', date: '2026-07-22', amount: 120, ts: 3 });
+  d.payments.push({ id: 'p9', cardId: 'cB', date: '2026-07-23', amount: 50, ts: 4 });
+  return d;
+};
+const failWrites = () => { global.wx.setStorageSync = () => { throw new Error('storage write failed'); }; };
+/* 写失败时：返回 false、内存与盘上都还是原样 */
+function expectRollback(name, run) {
+  test('写盘失败回滚：' + name, () => {
+    const box = mockWx(FULL());
+    const S = store.load();
+    const memBefore = JSON.stringify(S);
+    const diskBefore = JSON.stringify(box.data);
+    failWrites();
+    assert.strictEqual(run(S), false, '失败必须返回 false，页面才不会报成功');
+    assert.strictEqual(JSON.stringify(S), memBefore, '内存回到改前');
+    assert.strictEqual(JSON.stringify(box.data), diskBefore, '盘上没动');
+  });
+}
+expectRollback('addTerm', S => store.addTerm(S, '新商户'));
+expectRollback('delTerm', S => store.delTerm(S, 'm1'));
+expectRollback('deleteRecord 消费', S => store.deleteRecord(S, 'txn', 't1'));
+expectRollback('deleteRecord 还款', S => store.deleteRecord(S, 'pay', 'p1'));
+expectRollback('deleteCard', S => store.deleteCard(S, 'cA'));
+expectRollback('setSetting', S => store.setSetting(S, 'cardSort', 'custom'));
+expectRollback('moveCard', S => store.moveCard(S, 'cA', 'down'));
+expectRollback('markBackup', S => store.markBackup(S, '2026-10-04'));
+
+test('写盘失败回滚：importBackup 不动当前数据，返回 null', () => {
+  const box = mockWx(FULL());
+  const S = store.load();
+  const diskBefore = JSON.stringify(box.data);
+  failWrites();
+  assert.strictEqual(store.importBackup(REAL()), null);
+  assert.strictEqual(JSON.stringify(box.data), diskBefore, '盘上还是导入前的数据');
+  assert.strictEqual(S.cards.length, 2, '内存里的当前数据也没被替换');
+});
+
+test('写路径成功：落盘且数据正确', () => {
+  const box = mockWx(FULL());
+  const S = store.load();
+  assert.strictEqual(store.addTerm(S, '  新商户 '), true);
+  assert.ok(box.data.terminals.some(t => t.name === '新商户'), '新商户已落盘，空白被去掉');
+  assert.strictEqual(store.addTerm(S, '   '), false, '空名字不写');
+  assert.strictEqual(store.delTerm(S, 'm1'), true);
+  assert.ok(!box.data.terminals.some(t => t.id === 'm1'));
+  assert.strictEqual(store.deleteRecord(S, 'txn', 't1'), true);
+  assert.ok(!box.data.txns.some(t => t.id === 't1'));
+  assert.strictEqual(store.deleteRecord(S, 'pay', 'p1'), true);
+  assert.ok(!box.data.payments.some(p => p.id === 'p1'));
+  assert.strictEqual(store.moveCard(S, 'cA', 'down'), true);
+  assert.deepStrictEqual(box.data.cards.map(c => c.id), ['cB', 'cA']);
+  assert.strictEqual(store.setSetting(S, 'swipeStyle', 'list'), true);
+  assert.strictEqual(box.data.settings.swipeStyle, 'list');
+  assert.strictEqual(store.markBackup(S, '2026-10-04'), true);
+  assert.strictEqual(box.data.settings.lastBackup, '2026-10-04');
+  assert.strictEqual(store.deleteCard(S, 'cB'), true);
+  assert.ok(!box.data.cards.some(c => c.id === 'cB'));
+  assert.ok(!box.data.txns.some(t => t.cardId === 'cB') && !box.data.payments.some(p => p.cardId === 'cB'),
+    '删卡连带删它的消费和还款，不留孤儿');
+});
+
+test('importBackup：成功时返回 normalize 后的整份数据并落盘（含非空消费/还款）', () => {
+  const box = mockWx(REAL());
+  store.load();
+  const r = store.importBackup(FULL());
+  assert.ok(r && r.cards.length === 2 && r.txns.length === 2 && r.payments.length === 2);
+  assert.strictEqual(box.data.txns.length, 2, '已落盘');
+});
