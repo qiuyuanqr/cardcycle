@@ -20,7 +20,7 @@ Claude 历史会话内部 cwd 为 `/Users/yangqiuyuan/Coding/信用卡还款`；
 | `index.html` | 网页完整 UI 与 localStorage 适配；全局 `CardCycleCore` |
 | `sw.js` / `manifest.webmanifest` / 图标 | PWA 壳与离线缓存，当前 CACHE 为 `cardcycle-v4` |
 | `miniprogram/utils/core.js` | 根核心的同步副本，不能独立维护 |
-| `miniprogram/utils/store.js` | wx.storage、标准化、可测事务与展示数据；APP_VERSION 1.0.22 |
+| `miniprogram/utils/store.js` | wx.storage、标准化、可测事务与展示数据；APP_VERSION 1.0.23 |
 | `miniprogram/pages/` | dash/hist/settings 三个 tab；swipe/card/cardtx/pos 页面 |
 | `miniprogram/components/repay/` | 自绘还款组件 |
 | `test/` / `package.json` / `.github/workflows/test.yml` | Node 内置测试、双核心一致性、Node 22 CI |
@@ -103,7 +103,7 @@ preview/upload 均涉及微信远端，不能当只读本地编译操作。登�
 
 | 优先级 | 状态 | 下一步 |
 |---|---|---|
-| P1 验收 | 小程序当前后台状态与 1.0.22 真机未核实 | 用户在体验环境检查版本、过期文案、单笔编辑/重进持久化；再决定是否提审/发布。账号扫码需用户配合 |
+| P1 验收 | 小程序后台状态未核实；1.0.23（含 1.0.22 的功能 + M-a）已于 2026-10-04 经 CLI 上传，真机未验 | 用户在体验环境检查版本、过期文案、单笔编辑/重进持久化；再决定是否提审/发布。账号扫码需用户配合 |
 | P2 测试缺口 | 网页内联 UI/存储无自动化覆盖 | 后续涉及存储/UI时用独立测试环境和合成账本验四个读取场景与写失败，不污染用户存储 |
 | 已处理 M-a（2026-10-04） | 次要写路径忽略 save 返回值 | 已统一为快照事务：小程序 `store.commit` + `addTerm/delTerm/deleteRecord/deleteCard/setSetting/moveCard/markBackup/importBackup`，网页 `commit(mutate)`；写失败整份回滚并提示，导入/清空失败不再报成功。小程序 11 项新测试（共 59）；网页在浏览器里让 `localStorage.setItem` 抛错，15 条路径内存与盘均不变，正常写入同样验过。仍未覆盖：网页启动时 firstRun 种子与多人迁移的 save（非用户操作，失败时已有 alert），微信真机未验 |
 | 已处理 E-a | CI 文档与配置触发范围不一致 | 本次已澄清只在 main push/PR 测试；没有扩大 workflow，也没有建立 Pages 发布门禁 |
