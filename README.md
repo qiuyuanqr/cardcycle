@@ -1,5 +1,9 @@
 # 卡周期
 
+开发与维护先读 [AGENTS.md](AGENTS.md) 和 [HANDOFF.md](HANDOFF.md)。当前已核实背景、决策与待办在
+[docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md)，本次接管证据见
+[2026-10-02 交接](docs/HANDOFF_20261002.md)。原 [HANDOVER.md](HANDOVER.md) 保留历史细节，目录、版本及拷贝模板按最新交接核实。
+
 信用卡账单周期的记录与还款提醒工具。单文件网页，数据只存在使用者自己的设备上（localStorage），服务器端不保存任何数据。
 
 - 记录每笔刷卡的时间、金额、所用终端
